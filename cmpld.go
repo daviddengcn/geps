@@ -64,7 +64,7 @@ type GspPart interface {
 type HtmlGspPart string
 
 func (p HtmlGspPart) goSource() string {
-    return fmt.Sprintf("fmt.Print(%q)\n", p)
+    return fmt.Sprintf("__print__(%q)\n", p)
 }
 
 type CodeGspPart string
@@ -76,7 +76,7 @@ func (p CodeGspPart) goSource() string {
 type EvalGspPart string
 
 func (p EvalGspPart) goSource() string {
-    return fmt.Sprintf("fmt.Print(%s)\n", p)
+    return fmt.Sprintf("__print__(%s)\n", p)
 }
 
 type GspParts struct {
@@ -112,7 +112,6 @@ func (ps *GspParts) addCode(src string, codeType int) {
 
 func (ps GspParts) goSource() (src string) {
     src = `package main
-import "fmt"
 
 func __process__() {
 `
