@@ -9,7 +9,17 @@ import(
     "os"
     "os/exec"
     "time"
+    "log"
     //"go/format"
+)
+
+const(
+    fn_GSP_DIR = "gsp"
+    fn_SOURCE_DIR = "src"
+    fn_EXE_DIR = "exe"
+    fn_TEMPLATE_DIR = "tmpl"
+    
+    fn_TEMPLATE_GO = "tmpl.go"
 )
 
 func needUpdate(src, dst string) bool {
@@ -24,37 +34,6 @@ func needUpdate(src, dst string) bool {
         return false
     }
     return dstInfo.ModTime().Before(srcInfo.ModTime())
-}
-
-func goFileOfSrc(src string) string {
-    if filepath.Ext(src) == ".gsp" {
-        src = src[:len(src)-len(".gsp")]
-    } // if
-    
-    return src + ".go"
-}
-
-func exeFileOfSrc(src string) string {
-    if filepath.Ext(src) == ".gsp" {
-        src = src[:len(src)-len(".gsp")]
-    } // if
-    
-    return src + ".exe"
-}
-
-func findChangedFiles(srcPath, exePath string) (changed villa.StringSlice) {
-    files, _ := ioutil.ReadDir(srcPath)
-    for _, f := range files {
-        fn := f.Name()
-        if filepath.Ext(fn) == ".gsp" {
-            exe := exeFileOfSrc(fn)
-            if needUpdate(filepath.Join(srcPath, fn), filepath.Join(exePath, exe)) {
-                changed.Add(fn)
-            } // if
-        } // if
-    } // for f
-    
-    return changed
 }
 
 type GspPart interface {
@@ -202,62 +181,116 @@ func parse(src string) (parts GspParts){
     return parts
 }
 
-func generate(src, dst string) error {
-    fmt.Println("Generating", dst, "from", src, "...")
-    srcFile, err := ioutil.ReadFile(src)
+type monitor struct {
+    root string
+    gspPath string
+    srcPath string
+    exePath string
+    tmplFile string
+}
+
+func newMonitor(root string) *monitor {
+    return &monitor {
+        root: root,
+        gspPath: filepath.Join(root, fn_GSP_DIR),
+        srcPath: filepath.Join(root, fn_SOURCE_DIR),
+        exePath: filepath.Join(root, fn_EXE_DIR),
+        tmplFile: filepath.Join(filepath.Join(root, fn_TEMPLATE_DIR), fn_TEMPLATE_GO)}
+}
+
+func isGsp(fn string) bool {
+    return strings.ToLower(filepath.Ext(fn)) == ".gsp"
+}
+
+func (m *monitor) gspFile(gsp string) string {
+    return filepath.Join(m.gspPath, gsp)
+}
+
+func (m *monitor) srcFile(gsp string) string {
+    return filepath.Join(m.srcPath, gsp + ".go")
+}
+
+func (m *monitor) exeFile(gsp string) string {
+    return filepath.Join(m.exePath, gsp + ".exe")
+}
+
+func (m *monitor) findChangedFiles() (changed villa.StringSlice) {
+    files, _ := ioutil.ReadDir(m.gspPath)
+    for _, f := range files {
+        fn := f.Name()
+        if isGsp(fn) {
+            if needUpdate(m.gspFile(fn), m.exeFile(fn)) {
+                changed.Add(fn)
+            } // if
+        } // if
+    } // for f
+    
+    return changed
+}
+
+func (m *monitor) generate(gsp string) error {
+    gspFile := m.gspFile(gsp)
+    srcFile := m.srcFile(gsp)
+    fmt.Println("Generating", srcFile, "from", gspFile, "...")
+    gspContents, err := ioutil.ReadFile(gspFile)
     if err != nil {
         return err
     } // if
     
-    parts := parse(string(srcFile))
+    parts := parse(string(gspContents))
     source := []byte(parts.goSource())
 //    source, _ = format.Source(source)
-    ioutil.WriteFile(dst, []byte(source), 0)
+    ioutil.WriteFile(srcFile, []byte(source), 0666)
     return nil
 }
 
-func compile(src, tmpl, dst string) {
-    cmd := exec.Command("go", "build", "-o", dst, src, tmpl)
-    err := cmd.Run()
+func (m *monitor) compile(gsp string) {
+    tmpDir, err := ioutil.TempDir("", "gsp_")
+    if err != nil {
+        log.Println(err)
+        return
+    } // if
+    
+    tmpTmplGo := filepath.Join(tmpDir, fn_TEMPLATE_GO)
+    os.Symlink(m.tmplFile, tmpTmplGo)
+    tmpSrc := filepath.Join(tmpDir, gsp + ".go")
+    os.Symlink(m.srcFile(gsp), tmpSrc)
+    
+    exeFile := m.exeFile(gsp)
+    log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile)
+    cmd := exec.Command("go", "build", "-o", exeFile, tmpSrc, tmpTmplGo)
+    err = cmd.Run()
     
     if err != nil {
-        fmt.Println(err)
+        log.Println(err)
     } // if
 }
 
-func run(srcPath, tmplPath, exePath string) {
-    files := findChangedFiles(srcPath, exePath)
+func (m *monitor) run() {
+    files := m.findChangedFiles()
     if len(files) > 0 {
-        fmt.Println("Changed files:", files)
+        log.Printf("%d changed files found: %v", len(files), files)
     } // if
     
-    for _, src := range files {
-        goSrc := goFileOfSrc(src)
-        
-        err := generate(filepath.Join(srcPath, src), filepath.Join(exePath, goSrc))
+    for _, gsp := range files {
+        err := m.generate(gsp)
         if err != nil {
             fmt.Println(err)
             continue
         } // if
-        exe := exeFileOfSrc(src)
-        compile(filepath.Join(exePath, goSrc), filepath.Join(tmplPath, "tmpl.go"), filepath.Join(exePath, exe))
+        m.compile(gsp)
     } // for file
 }
 
 func main() {
-    path := "."
-    path, _ = filepath.Abs(path)
-    srcPath := filepath.Join(path, "src")
-//    tmplPath := filepath.Join(path, "tmpl")
-    tmplPath := filepath.Join(path, "exe")
-    exePath := filepath.Join(path, "exe")
+    root := "."
+    root, _ = filepath.Abs(root)
     
-    fmt.Println("Monitoring", path, "...")
-    fmt.Println("  Source folder:", srcPath, "...")
-    fmt.Println("  Exec folder  :", exePath, "...")
-    
+    log.Println("Monitoring", root, "...")
+
+    m := newMonitor(root)    
     for {
-        run(srcPath, tmplPath, exePath)
+        m.run()
         time.Sleep(1*time.Second)
     }
 }
