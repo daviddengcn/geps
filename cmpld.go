@@ -189,13 +189,19 @@ type monitor struct {
     tmplFile string
 }
 
-func newMonitor(root string) *monitor {
-    return &monitor {
+func newMonitor(root string) (m *monitor) {
+    m = &monitor {
         root: root,
         gspPath: filepath.Join(root, fn_GSP_DIR),
         srcPath: filepath.Join(root, fn_SOURCE_DIR),
         exePath: filepath.Join(root, fn_EXE_DIR),
         tmplFile: filepath.Join(filepath.Join(root, fn_TEMPLATE_DIR), fn_TEMPLATE_GO)}
+        
+    os.MkdirAll(m.gspPath, 0777)
+    os.MkdirAll(m.srcPath, 0777)
+    os.MkdirAll(m.exePath, 0777)
+        
+    return m
 }
 
 func isGsp(fn string) bool {
@@ -240,8 +246,24 @@ func (m *monitor) generate(gsp string) error {
     parts := parse(string(gspContents))
     source := []byte(parts.goSource())
 //    source, _ = format.Source(source)
-    ioutil.WriteFile(srcFile, []byte(source), 0666)
-    return nil
+    return ioutil.WriteFile(srcFile, []byte(source), 0666)
+}
+
+func copyFile(src, dst string, perm os.FileMode) (err error) {
+    bytes, err := ioutil.ReadFile(src)
+    if err != nil {
+        return err
+    } // if
+    return ioutil.WriteFile(dst, bytes, perm)
+}
+
+func safeLink(src, dst string, perm os.FileMode) (err error) {
+    err = os.Symlink(src, dst)
+    if err == nil {
+        return nil
+    } // if
+    
+    return copyFile(src, dst, perm)
 }
 
 func (m *monitor) compile(gsp string) {
@@ -252,9 +274,15 @@ func (m *monitor) compile(gsp string) {
     } // if
     
     tmpTmplGo := filepath.Join(tmpDir, fn_TEMPLATE_GO)
-    os.Symlink(m.tmplFile, tmpTmplGo)
+    safeLink(m.tmplFile, tmpTmplGo, 0666)
+    if err != nil {
+        log.Println(err)
+    } // if
     tmpSrc := filepath.Join(tmpDir, gsp + ".go")
-    os.Symlink(m.srcFile(gsp), tmpSrc)
+    err = safeLink(m.srcFile(gsp), tmpSrc, 0666)
+    if err != nil {
+        log.Println(err)
+    } // if
     
     exeFile := m.exeFile(gsp)
     log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile)
