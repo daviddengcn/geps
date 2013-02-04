@@ -2,12 +2,10 @@ package main
 
 import(
     "fmt"
-    "github.com/daviddengcn/go-villa"
     "strings"
-    "os"
-    "os/exec"
     "time"
     "log"
+    "github.com/daviddengcn/go-villa"
 )
 
 const(
@@ -244,21 +242,21 @@ func (m *monitor) generate(gsp villa.Path) error {
     return srcFile.WriteFile([]byte(source), 0666)
 }
 
-func copyFile(src, dst villa.Path, perm os.FileMode) (err error) {
+func copyFile(src, dst villa.Path) (err error) {
     bytes, err := src.ReadFile()
     if err != nil {
         return err
     } // if
-    return dst.WriteFile(bytes, perm)
+    return dst.WriteFile(bytes, 0666)
 }
 
-func safeLink(src, dst villa.Path, perm os.FileMode) (err error) {
+func safeLink(src, dst villa.Path) (err error) {
     err = src.Symlink(dst)
     if err == nil {
         return nil
     } // if
     
-    return copyFile(src, dst, perm)
+    return copyFile(src, dst)
 }
 
 func (m *monitor) compile(gsp villa.Path) {
@@ -269,19 +267,19 @@ func (m *monitor) compile(gsp villa.Path) {
     } // if
     
     tmpTmplGo := tmpDir.Join(fn_TEMPLATE_GO)
-    err = safeLink(m.tmplFile, tmpTmplGo, 0666)
+    err = safeLink(m.tmplFile, tmpTmplGo)
     if err != nil {
         log.Println(err)
     } // if
     tmpSrc := tmpDir.Join(gsp + ".go")
-    err = safeLink(m.srcFile(gsp), tmpSrc, 0666)
+    err = safeLink(m.srcFile(gsp), tmpSrc)
     if err != nil {
         log.Println(err)
     } // if
     
     exeFile := m.exeFile(gsp)
     log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile)
-    cmd := exec.Command("go", "build", "-o", exeFile.S(), tmpSrc.S(), tmpTmplGo.S())
+    cmd := villa.Path("go").Command("build", "-o", exeFile.S(), tmpSrc.S(), tmpTmplGo.S())
     err = cmd.Run()
     
     if err != nil {
