@@ -2,15 +2,12 @@ package main
 
 import(
     "fmt"
-    "path/filepath"
-    "io/ioutil"
     "github.com/daviddengcn/go-villa"
     "strings"
     "os"
     "os/exec"
     "time"
     "log"
-    //"go/format"
 )
 
 const(
@@ -22,14 +19,14 @@ const(
     fn_TEMPLATE_GO = "tmpl.go"
 )
 
-func needUpdate(src, dst string) bool {
-    dstInfo, err := os.Stat(dst)
+func needUpdate(src, dst villa.Path) bool {
+    dstInfo, err := dst.Stat()
     if err != nil {
         // Destination does not exist
         return true
     } // if
     
-    srcInfo, err := os.Stat(src)
+    srcInfo, err := src.Stat()
     if err != nil {
         return false
     }
@@ -182,51 +179,50 @@ func parse(src string) (parts GspParts){
 }
 
 type monitor struct {
-    root string
-    gspPath string
-    srcPath string
-    exePath string
-    tmplFile string
+    root villa.Path
+    gspPath villa.Path
+    srcPath villa.Path
+    exePath villa.Path
+    tmplFile villa.Path
 }
 
-func newMonitor(root string) (m *monitor) {
-    m = &monitor {
+func newMonitor(root villa.Path) *monitor {
+    m := &monitor {
         root: root,
-        gspPath: filepath.Join(root, fn_GSP_DIR),
-        srcPath: filepath.Join(root, fn_SOURCE_DIR),
-        exePath: filepath.Join(root, fn_EXE_DIR),
-        tmplFile: filepath.Join(filepath.Join(root, fn_TEMPLATE_DIR), fn_TEMPLATE_GO)}
-        
-    os.MkdirAll(m.gspPath, 0777)
-    os.MkdirAll(m.srcPath, 0777)
-    os.MkdirAll(m.exePath, 0777)
-        
-    return m
+        gspPath: root.Join(fn_GSP_DIR),
+        srcPath: root.Join(fn_SOURCE_DIR),
+        exePath: root.Join(fn_EXE_DIR),
+        tmplFile: root.Join(fn_TEMPLATE_DIR, fn_TEMPLATE_GO)}
+		
+	m.srcPath.MkdirAll(0777)
+	m.exePath.MkdirAll(0777)
+		
+	return m
 }
 
-func isGsp(fn string) bool {
-    return strings.ToLower(filepath.Ext(fn)) == ".gsp"
+func isGsp(fn villa.Path) bool {
+    return strings.ToLower(fn.Ext()) == ".gsp"
 }
 
-func (m *monitor) gspFile(gsp string) string {
-    return filepath.Join(m.gspPath, gsp)
+func (m *monitor) gspFile(gsp villa.Path) villa.Path {
+    return m.gspPath.Join(gsp)
 }
 
-func (m *monitor) srcFile(gsp string) string {
-    return filepath.Join(m.srcPath, gsp + ".go")
+func (m *monitor) srcFile(gsp villa.Path) villa.Path {
+    return m.srcPath.Join(gsp + ".go")
 }
 
-func (m *monitor) exeFile(gsp string) string {
-    return filepath.Join(m.exePath, gsp + ".exe")
+func (m *monitor) exeFile(gsp villa.Path) villa.Path {
+    return m.exePath.Join(gsp + ".exe")
 }
 
-func (m *monitor) findChangedFiles() (changed villa.StringSlice) {
-    files, _ := ioutil.ReadDir(m.gspPath)
+func (m *monitor) findChangedFiles() (changed []villa.Path) {
+    files, _ := m.gspPath.ReadDir()
     for _, f := range files {
-        fn := f.Name()
+        fn := villa.Path(f.Name())
         if isGsp(fn) {
             if needUpdate(m.gspFile(fn), m.exeFile(fn)) {
-                changed.Add(fn)
+                changed = append(changed, fn)
             } // if
         } // if
     } // for f
@@ -234,31 +230,30 @@ func (m *monitor) findChangedFiles() (changed villa.StringSlice) {
     return changed
 }
 
-func (m *monitor) generate(gsp string) error {
+func (m *monitor) generate(gsp villa.Path) error {
     gspFile := m.gspFile(gsp)
     srcFile := m.srcFile(gsp)
     fmt.Println("Generating", srcFile, "from", gspFile, "...")
-    gspContents, err := ioutil.ReadFile(gspFile)
+    gspContents, err := gspFile.ReadFile()
     if err != nil {
         return err
     } // if
     
     parts := parse(string(gspContents))
     source := []byte(parts.goSource())
-//    source, _ = format.Source(source)
-    return ioutil.WriteFile(srcFile, []byte(source), 0666)
+    return srcFile.WriteFile([]byte(source), 0666)
 }
 
-func copyFile(src, dst string, perm os.FileMode) (err error) {
-    bytes, err := ioutil.ReadFile(src)
+func copyFile(src, dst villa.Path, perm os.FileMode) (err error) {
+    bytes, err := src.ReadFile()
     if err != nil {
         return err
     } // if
-    return ioutil.WriteFile(dst, bytes, perm)
+    return dst.WriteFile(bytes, perm)
 }
 
-func safeLink(src, dst string, perm os.FileMode) (err error) {
-    err = os.Symlink(src, dst)
+func safeLink(src, dst villa.Path, perm os.FileMode) (err error) {
+    err = src.Symlink(dst)
     if err == nil {
         return nil
     } // if
@@ -266,19 +261,19 @@ func safeLink(src, dst string, perm os.FileMode) (err error) {
     return copyFile(src, dst, perm)
 }
 
-func (m *monitor) compile(gsp string) {
-    tmpDir, err := ioutil.TempDir("", "gsp_")
+func (m *monitor) compile(gsp villa.Path) {
+    tmpDir, err := villa.Path("").TempDir("gsp_")
     if err != nil {
         log.Println(err)
         return
     } // if
     
-    tmpTmplGo := filepath.Join(tmpDir, fn_TEMPLATE_GO)
-    safeLink(m.tmplFile, tmpTmplGo, 0666)
+    tmpTmplGo := tmpDir.Join(fn_TEMPLATE_GO)
+    err = safeLink(m.tmplFile, tmpTmplGo, 0666)
     if err != nil {
         log.Println(err)
     } // if
-    tmpSrc := filepath.Join(tmpDir, gsp + ".go")
+    tmpSrc := tmpDir.Join(gsp + ".go")
     err = safeLink(m.srcFile(gsp), tmpSrc, 0666)
     if err != nil {
         log.Println(err)
@@ -286,7 +281,7 @@ func (m *monitor) compile(gsp string) {
     
     exeFile := m.exeFile(gsp)
     log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile)
-    cmd := exec.Command("go", "build", "-o", exeFile, tmpSrc, tmpTmplGo)
+    cmd := exec.Command("go", "build", "-o", exeFile.S(), tmpSrc.S(), tmpTmplGo.S())
     err = cmd.Run()
     
     if err != nil {
@@ -311,12 +306,12 @@ func (m *monitor) run() {
 }
 
 func main() {
-    root := "."
-    root, _ = filepath.Abs(root)
+    root := villa.Path(".")
+    root, _ = root.Abs()
     
     log.Println("Monitoring", root, "...")
 
-    m := newMonitor(root)    
+    m := newMonitor(root)   
     for {
         m.run()
         time.Sleep(1*time.Second)
