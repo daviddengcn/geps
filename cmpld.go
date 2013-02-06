@@ -22,19 +22,6 @@ const(
 func needUpdate(srcs, dsts []villa.Path) bool {
 	var srcInfo, dstInfo os.FileInfo
 	
-	for _, dst := range dsts {
-		info, err := dst.Stat()
-		if err == nil {
-			if dstInfo == nil || dstInfo.ModTime().Before(info.ModTime()) {
-				dstInfo = info
-			}
-		}
-	}
-	if dstInfo == nil {
-		// No destination file found!
-		return true
-	}
-	
 	for _, src := range srcs {
 		info, err := src.Stat()
 		if err == nil {
@@ -48,6 +35,19 @@ func needUpdate(srcs, dsts []villa.Path) bool {
         return false
     } // if
     
+	for _, dst := range dsts {
+		info, err := dst.Stat()
+		if err == nil {
+			if dstInfo == nil || dstInfo.ModTime().Before(info.ModTime()) {
+				dstInfo = info
+			}
+		}
+	}
+	if dstInfo == nil {
+		// No destination file found!
+		return true
+	}
+	
     return dstInfo.ModTime().Before(srcInfo.ModTime())
 }
 
@@ -171,7 +171,7 @@ func (m *monitor) compile(gsp villa.Path) {
 		return
     } // if
     
-    exeFile := m.exeFile(gsp)
+    exeFile_ := m.exeFile(gsp) + "_"
 	cmplFile := m.cmplFile(gsp)
 	
 	cf, err := cmplFile.Create()
@@ -181,15 +181,27 @@ func (m *monitor) compile(gsp villa.Path) {
 	}
 	defer cf.Close()
 	
-    log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile)
-    cmd := villa.Path("go").Command("build", "-o", exeFile.S(), tmpSrc.S(), tmpTmplGo.S())
+    log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile_)
+    cmd := villa.Path("go").Command("build", "-o", exeFile_.S(), tmpSrc.S(), tmpTmplGo.S())
 	cmd.Stdout = cf
 	cmd.Stderr = cf
     err = cmd.Run()
     
     if err != nil {
         log.Println("Compiling failed:", err)
+		return
     } // if
+	
+	err = m.exeFile(gsp).Remove()
+    if err != nil {
+        log.Println("Remove failed:", err)
+		return
+    } // if
+	
+	err = exeFile_.Rename(m.exeFile(gsp))
+    if err != nil {
+        log.Println("Rename failed:", err)
+	}
 }
 
 func (m *monitor) run() {
