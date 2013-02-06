@@ -2,7 +2,6 @@ package main
 
 import(
 	"fmt"
-	"html"
 	"html/template"
 	"strings"
 )
@@ -13,7 +12,7 @@ func __print__(s interface{}) {
 
 /* <html>$text</html> */
 func Html(text interface{}) string {
-	return strings.Replace(html.EscapeString(fmt.Sprint(text)), "\n", "<br>", -1)
+	return strings.Replace(template.HTMLEscapeString(fmt.Sprint(text)), "\n", "<br>", -1)
 }
 
 
