@@ -1,6 +1,7 @@
 package gp
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/daviddengcn/go-villa"
 	"log"
@@ -68,7 +69,7 @@ func sepGlobal(src string) (cmd, remain string) {
 }
 
 func (p *Parser) include(ps *GspParts, path villa.Path) error {
-	src, err := p.load(path)
+	src, err := p.Load(path)
 
 	if err != nil {
 		return err
@@ -90,7 +91,6 @@ func (p *Parser) addCode(ps *GspParts, src string, codeType int) {
 	case ct_GLOBAL:
 		//            ps.global = append(ps.global, CodeGspPart(src))
 		cmd, src := sepGlobal(src)
-		fmt.Println("global:", cmd, src)
 		switch cmd {
 		case "import":
 			imports := strings.Split(src, ",")
@@ -137,7 +137,7 @@ func (p *Parser) addCode(ps *GspParts, src string, codeType int) {
 	}
 }
 
-func (ps GspParts) goSource() (src string) {
+func (ps GspParts) GoSource() (src string) {
 	src = "package main\n"
 
 	for imp := range ps.imports {
@@ -179,7 +179,7 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 		C3
 	)
 	status, tp := R, ct_GLOBAL
-	source := ""
+	var source bytes.Buffer
 	for _, r := range src {
 		switch status {
 		case R:
@@ -188,19 +188,19 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 				status = C0
 
 			default:
-				source += string(r)
+				source.WriteRune(r)
 			}
 		case C0:
 			switch r {
 			case '%':
 				status, tp = C1, ct_LOCAL
-				parts.addHtml(source)
-				source = ""
+				parts.addHtml(source.String())
+				source.Reset()
 
 			default:
 				status = R
-				source += "<"
-				source += string(r)
+				source.WriteRune('<') // the < causing R->C0
+				source.WriteRune(r)
 			}
 
 		case C1:
@@ -216,7 +216,7 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 
 			default:
 				status = C2
-				source += string(r)
+				source.WriteRune(r)
 			}
 
 		case C2:
@@ -225,27 +225,28 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 				status = C3
 
 			default:
-				source += string(r)
+				source.WriteRune(r)
 			}
 
 		case C3:
 			switch r {
 			case '>':
 				status = R
-				p.addCode(parts, source, tp)
-				source = ""
+				p.addCode(parts, source.String(), tp)
+				source.Reset()
 
 			default:
-				source += "%" // the % causing C2->C3
-				source += string(r)
+				status = C2
+				source.WriteRune('%') // the % causing C2->C3
+				source.WriteRune(r)
 			}
 		} // switch status
 	} // for r
 
 	switch status {
 	case R:
-		if len(source) > 0 {
-			parts.addHtml(source)
+		if source.Len() > 0 {
+			parts.addHtml(source.String())
 		}
 	default:
 		log.Println("Unclosed tag")
@@ -256,11 +257,11 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 type LoadFunc func(path villa.Path) (string, error)
 
 type Parser struct {
-	load LoadFunc
+	Load LoadFunc
 }
 
 func NewParser(load LoadFunc) *Parser {
-	return &Parser{load: load}
+	return &Parser{Load: load}
 }
 
 func (p *Parser) Parse(src string) (parts *GspParts, err error) {

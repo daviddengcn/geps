@@ -5,7 +5,9 @@ import(
     "strings"
     "time"
     "log"
+	"os"
     "github.com/daviddengcn/go-villa"
+    "github.com/daviddengcn/gsp/parser"
 )
 
 const(
@@ -17,163 +19,36 @@ const(
     fn_TEMPLATE_GO = "tmpl.go"
 )
 
-func needUpdate(src, dst villa.Path) bool {
-    dstInfo, err := dst.Stat()
-    if err != nil {
-        // Destination does not exist
-        return true
-    } // if
-    
-    srcInfo, err := src.Stat()
-    if err != nil {
+func needUpdate(srcs, dsts []villa.Path) bool {
+	var srcInfo, dstInfo os.FileInfo
+	
+	for _, dst := range dsts {
+		info, err := dst.Stat()
+		if err == nil {
+			if dstInfo == nil || dstInfo.ModTime().Before(info.ModTime()) {
+				dstInfo = info
+			}
+		}
+	}
+	if dstInfo == nil {
+		// No destination file found!
+		return true
+	}
+	
+	for _, src := range srcs {
+		info, err := src.Stat()
+		if err == nil {
+			if srcInfo == nil || srcInfo.ModTime().Before(info.ModTime()) {
+				srcInfo = info
+			}
+		}
+	}
+    if srcInfo == nil {
+		// No source file found!
         return false
-    }
-    return dstInfo.ModTime().Before(srcInfo.ModTime())
-}
-
-type GspPart interface {
-    goSource() string
-}
-
-type HtmlGspPart string
-
-func (p HtmlGspPart) goSource() string {
-    return fmt.Sprintf("__print__(%q)\n", p)
-}
-
-type CodeGspPart string
-
-func (p CodeGspPart) goSource() string {
-    return string(p) + "\n"
-}
-
-type EvalGspPart string
-
-func (p EvalGspPart) goSource() string {
-    return fmt.Sprintf("__print__(%s)\n", p)
-}
-
-type GspParts struct {
-    local []GspPart
-    global []GspPart
-}
-
-func (ps *GspParts) addHtml(src string) {
-    if len(src) == 0 {
-        return
     } // if
-    ps.local = append(ps.local, HtmlGspPart(src))
-}
-
-const (
-    ct_LOCAL = iota
-    ct_GLOBAL
-    ct_EVAL
-)
-
-func (ps *GspParts) addCode(src string, codeType int) {
-    switch codeType {
-        case ct_LOCAL:
-            ps.local = append(ps.local, CodeGspPart(src))
-            
-        case ct_GLOBAL:
-            ps.global = append(ps.global, CodeGspPart(src))
-            
-        case ct_EVAL:
-            ps.local = append(ps.local, EvalGspPart(strings.TrimSpace(src)))
-    }
-}
-
-func (ps GspParts) goSource() (src string) {
-    src = `package main
-
-func __process__() {
-`
-    for _, p := range ps.local {
-        src += "    " + p.goSource()
-    } // for p
     
-    src += "}\n"
-    
-    return src
-}
-
-func parse(src string) (parts GspParts){
-    const (
-        R = iota
-        C0
-        C1
-        C2
-        C3
-    )
-    status, tp := R, ct_GLOBAL
-    source := ""
-    for _, r := range src {
-        switch status {
-            case R:
-                switch r {
-                    case '<':
-                        status = C0
-                        
-                    default:
-                        source += string(r)
-                }
-            case C0:
-                switch r {
-                    case '%':
-                        status, tp = C1, ct_LOCAL
-                        parts.addHtml(source)
-                        source = ""
-                    
-                    default:
-                        status = R
-                        source += "<"
-                        source += string(r)
-                }
-                
-            case C1:
-                switch r {
-                    case '=':
-                        tp = ct_EVAL
-                        
-                    case '%':
-                        status = C3
-                        
-                    default:
-                        status = C2
-                        source += string(r)
-                }
-                
-            case C2:
-                switch r {
-                    case '%':
-                        status = C3
-                        
-                    default:
-                        source += string(r)
-                }
-                
-            case C3:
-                switch r {
-                    case '>':
-                        status = R
-                        parts.addCode(source, tp)
-                        source = ""
-                        
-                    default:
-                        source += "%"
-                        source += string(r)
-                }
-        }
-    } // for r
-    
-    switch status {
-        case R:
-            if len(source) > 0 {
-                parts.addHtml(source)
-            } // if
-    }
-    return parts
+    return dstInfo.ModTime().Before(srcInfo.ModTime())
 }
 
 type monitor struct {
@@ -182,6 +57,7 @@ type monitor struct {
     srcPath villa.Path
     exePath villa.Path
     tmplFile villa.Path
+	parser *gp.Parser
 }
 
 func newMonitor(root villa.Path) *monitor {
@@ -191,6 +67,15 @@ func newMonitor(root villa.Path) *monitor {
         srcPath: root.Join(fn_SOURCE_DIR),
         exePath: root.Join(fn_EXE_DIR),
         tmplFile: root.Join(fn_TEMPLATE_DIR, fn_TEMPLATE_GO)}
+		
+	m.parser = gp.NewParser(func(fn villa.Path) (string, error) {
+	    src, err := m.gspFile(fn).ReadFile()
+	    if err != nil {
+	        return "", err
+	    } // if
+		
+		return string(src), nil
+	});
 		
 	m.srcPath.MkdirAll(0777)
 	m.exePath.MkdirAll(0777)
@@ -214,12 +99,16 @@ func (m *monitor) exeFile(gsp villa.Path) villa.Path {
     return m.exePath.Join(gsp + ".exe")
 }
 
+func (m *monitor) cmplFile(gsp villa.Path) villa.Path {
+    return m.srcPath.Join(gsp + ".go.log")
+}
+
 func (m *monitor) findChangedFiles() (changed []villa.Path) {
     files, _ := m.gspPath.ReadDir()
     for _, f := range files {
         fn := villa.Path(f.Name())
         if isGsp(fn) {
-            if needUpdate(m.gspFile(fn), m.exeFile(fn)) {
+            if needUpdate([]villa.Path{m.gspFile(fn), m.tmplFile}, []villa.Path{m.exeFile(fn), m.cmplFile(fn)}) {
                 changed = append(changed, fn)
             } // if
         } // if
@@ -232,13 +121,16 @@ func (m *monitor) generate(gsp villa.Path) error {
     gspFile := m.gspFile(gsp)
     srcFile := m.srcFile(gsp)
     fmt.Println("Generating", srcFile, "from", gspFile, "...")
-    gspContents, err := gspFile.ReadFile()
+    gspContents , err := m.parser.Load(gsp)
     if err != nil {
         return err
     } // if
     
-    parts := parse(string(gspContents))
-    source := []byte(parts.goSource())
+    parts, err := m.parser.Parse(string(gspContents))
+	if err != nil {
+		return err
+	}
+    source := []byte(parts.GoSource())
     return srcFile.WriteFile([]byte(source), 0666)
 }
 
@@ -270,20 +162,33 @@ func (m *monitor) compile(gsp villa.Path) {
     err = safeLink(m.tmplFile, tmpTmplGo)
     if err != nil {
         log.Println(err)
+		return
     } // if
     tmpSrc := tmpDir.Join(gsp + ".go")
     err = safeLink(m.srcFile(gsp), tmpSrc)
     if err != nil {
         log.Println(err)
+		return
     } // if
     
     exeFile := m.exeFile(gsp)
+	cmplFile := m.cmplFile(gsp)
+	
+	cf, err := cmplFile.Create()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer cf.Close()
+	
     log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile)
     cmd := villa.Path("go").Command("build", "-o", exeFile.S(), tmpSrc.S(), tmpTmplGo.S())
+	cmd.Stdout = cf
+	cmd.Stderr = cf
     err = cmd.Run()
     
     if err != nil {
-        log.Println(err)
+        log.Println("Compiling failed:", err)
     } // if
 }
 
