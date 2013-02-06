@@ -1,4 +1,6 @@
 package main
 
-func __process__() {
+import "net/http"
+
+func __process__(response http.ResponseWriter, request *http.Request) {
 }

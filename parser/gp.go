@@ -3,11 +3,11 @@ package gp
 import (
 	"bytes"
 	"fmt"
-	"github.com/daviddengcn/go-villa"
 	"log"
 	"strconv"
 	"strings"
 	"unicode"
+	"github.com/daviddengcn/go-villa"
 )
 
 const (
@@ -25,7 +25,7 @@ type GspPart interface {
 type HtmlGspPart string
 
 func (p HtmlGspPart) goSource() string {
-	return fmt.Sprintf("__print__(%q)\n", p)
+	return fmt.Sprintf("__print__(__response__, %q)\n", p)
 }
 
 type CodeGspPart string
@@ -37,7 +37,7 @@ func (p CodeGspPart) goSource() string {
 type EvalGspPart string
 
 func (p EvalGspPart) goSource() string {
-	return fmt.Sprintf("__print__(%s)\n", p)
+	return fmt.Sprintf("__print__(__response__, %s)\n", p)
 }
 
 type GspParts struct {
@@ -142,13 +142,29 @@ func (p *Parser) addCode(ps *GspParts, src string, codeType int) {
 }
 
 func (ps GspParts) GoSource() (src string) {
+	ps.imports.Put("net/http")
+	ps.imports.Put("fmt")
+	ps.imports.Put("strings")
+	
 	src = "package main\n"
-
+	
 	for imp := range ps.imports {
 		src += "import " + strconv.Quote(imp) + "\n"
 	}
+	
+	src += `
+func init() {
+	fmt.Sprint()
+	strings.TrimSpace("")
+}	
+	`
 
-	src += "func __process__() {\n"
+	src += `
+func __process__(response http.ResponseWriter, request *http.Request) {
+	    __response__ := response
+	    _ = __response__
+		request.ParseForm()
+`
 
 	for _, p := range ps.local {
 		src += "    " + p.goSource()

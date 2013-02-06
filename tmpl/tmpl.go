@@ -4,10 +4,12 @@ import(
 	"fmt"
 	"html/template"
 	"strings"
+	"net/http"
+	"net/http/cgi"
 )
 
-func __print__(s interface{}) {
-    fmt.Print(s)
+func __print__(response http.ResponseWriter, s interface{}) {
+    response.Write([]byte(fmt.Sprint(s)))
 }
 
 /* <html>$text</html> */
@@ -32,7 +34,5 @@ func JS(text interface{}) string {
 }
 
 func main() {
-	fmt.Println("Content-Type: text/html; charset=UTF-8")
-	fmt.Println()
-    __process__()
+	cgi.Serve(http.HandlerFunc(__process__))
 }
