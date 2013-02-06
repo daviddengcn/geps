@@ -146,33 +146,34 @@ func (ps GspParts) GoSource() (src string) {
 	ps.imports.Put("fmt")
 	ps.imports.Put("strings")
 	
-	src = "package main\n"
+	var out bytes.Buffer
+	out.WriteString("package main\n")
 	
 	for imp := range ps.imports {
-		src += "import " + strconv.Quote(imp) + "\n"
+		out.WriteString("import " + strconv.Quote(imp) + "\n")
 	}
 	
-	src += `
+	out.WriteString(`
 func init() {
-	fmt.Sprint()
-	strings.TrimSpace("")
+    fmt.Sprint()
+    strings.TrimSpace("")
 }	
-	`
+	`)
 
-	src += `
+	out.WriteString(`
 func __process__(response http.ResponseWriter, request *http.Request) {
-	    __response__ := response
-	    _ = __response__
-		request.ParseForm()
-`
+    __response__ := response
+    _ = __response__
+    request.ParseForm()
+`)
 
 	for _, p := range ps.local {
-		src += "    " + p.goSource()
+		out.WriteString(p.goSource())
 	}
 
-	src += "}\n"
+	out.WriteString("}\n")
 
-	return src
+	return out.String()
 }
 
 func (p *Parser) parse(src string, parts *GspParts) (err error) {
