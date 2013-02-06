@@ -15,6 +15,7 @@ const (
 	ct_GLOBAL
 	ct_EVAL
 	ct_HTML
+	ct_IGNORE
 )
 
 type GspPart interface {
@@ -87,6 +88,9 @@ func (p *Parser) addCode(ps *GspParts, src string, codeType int) {
 
 	case ct_EVAL:
 		ps.local = append(ps.local, EvalGspPart(strings.TrimSpace(src)))
+		
+	case ct_IGNORE:
+		// Do nothing
 
 	case ct_GLOBAL:
 		//            ps.global = append(ps.global, CodeGspPart(src))
@@ -157,7 +161,8 @@ func (ps GspParts) GoSource() (src string) {
 
 func (p *Parser) parse(src string, parts *GspParts) (err error) {
 	/*
-		    Status Transform
+			Status Transform
+			
 			             .-- R(eady) <---.
 			         (<)/                 |
 			           V                  |
@@ -165,11 +170,13 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 			        (%)|   ___(%)____     |
 			           V  /          V    |
 			tp=LOCAL   C1 ---> C2 ---> C3-'
-		               | \        (%)
+			           | \        (%)
 			           |  \(=)
 			tp=EVAL    |   `-> C2 ...
-			            \(!)
-			tp=GLOBAL    `--> C2 ...
+			           |\(!)
+			tp=GLOBAL  | `---> C2 ...
+			            \(#)
+			tp=IGNORED   `---> C2 ...
 	*/
 	const (
 		R = iota
@@ -211,6 +218,9 @@ func (p *Parser) parse(src string, parts *GspParts) (err error) {
 			case '!':
 				status, tp = C2, ct_GLOBAL
 
+			case '#':
+				status, tp = C2, ct_IGNORE
+				
 			case '%':
 				status = C3
 

@@ -54,7 +54,7 @@ abc<%!import "fmt", "github.com/daviddengcn/go-villa"%>"
 	//	fmt.Println("strconv", "|" + str + "|", err)
 }
 
-func TestParser2(t *testing.T) {
+func TestParser_bugstatus(t *testing.T) {
 	p := NewParser(nil)
 	src := "<% \"%v\" %>"
 	parts, err := p.Parse(src)
@@ -68,5 +68,18 @@ func TestParser2(t *testing.T) {
 
 	if parts.local[0].(CodeGspPart) != " \"%v\" " {
 		t.Errorf("Expected %s but got %s", " \"%v\" ", parts.local[0])
+	}
+}
+
+func TestParser_ignore(t *testing.T) {
+	p := NewParser(nil)
+	src := "<%# \"%v\" %>"
+	parts, err := p.Parse(src)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	if len(parts.local) != 0 {
+		t.Errorf("Expected 0 local line, but got %d lines", len(parts.local))
 	}
 }
