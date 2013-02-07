@@ -192,13 +192,18 @@ func (m *monitor) compile(gsp villa.Path) {
 		return
     } // if
 	
-	err = m.exeFile(gsp).Remove()
-    if err != nil {
-        log.Println("Remove failed:", err)
-		return
-    } // if
+	exeFile := m.exeFile(gsp)
+	if exeFile.Exists() {
+	    log.Println("Deleting", exeFile)
+		err = exeFile.Remove()
+	    if err != nil {
+	        log.Println("Remove failed:", err)
+			return
+	    }
+	}
 	
-	err = exeFile_.Rename(m.exeFile(gsp))
+    log.Println("Renaming", exeFile_, "to", exeFile)
+	err = exeFile_.Rename(exeFile)
     if err != nil {
         log.Println("Rename failed:", err)
 	}
