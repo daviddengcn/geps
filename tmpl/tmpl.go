@@ -6,6 +6,7 @@ import(
 	"strings"
 	"net/http"
 	"net/http/cgi"
+	"github.com/russross/blackfriday"
 )
 
 func __print__(response http.ResponseWriter, s interface{}) {
@@ -32,6 +33,12 @@ func Query(text interface{}) string {
 func JS(text interface{}) string {
 	return template.JSEscaper(fmt.Sprint(text))
 }
+
+// Markdown converts a markdown markup text into HTML
+func Markdown(text interface{}) string {
+	return string(blackfriday.MarkdownCommon([]byte(fmt.Sprint(text))))
+}
+
 
 func main() {
 	cgi.Serve(http.HandlerFunc(__process__))

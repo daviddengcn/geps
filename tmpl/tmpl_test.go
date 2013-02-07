@@ -15,4 +15,6 @@ func TestEscapeFuncs(t *testing.T) {
 	fmt.Println("Query:", htmlQuery)
 	htmlJS := JS(src)
 	fmt.Println("JS:", htmlJS)
+	htmlMd := Markdown(src)
+	fmt.Println("Markdown:", htmlMd)
 }
