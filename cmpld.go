@@ -63,7 +63,8 @@ type monitor struct {
 func newMonitor(root villa.Path) *monitor {
     m := &monitor {
         root: root,
-        gspPath: root.Join(fn_GSP_DIR),
+        //gspPath: root.Join(fn_GSP_DIR),
+		gspPath: root,
         srcPath: root.Join(fn_SOURCE_DIR),
         exePath: root.Join(fn_EXE_DIR),
         tmplFile: root.Join(fn_TEMPLATE_DIR, fn_TEMPLATE_GO)}
