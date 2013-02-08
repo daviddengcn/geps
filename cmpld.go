@@ -206,7 +206,18 @@ func (m *monitor) compile(gsp villa.Path) {
     log.Println("Renaming", exeFile_, "to", exeFile)
 	err = exeFile_.Rename(exeFile)
     if err != nil {
-        log.Println("Rename failed:", err)
+		if !os.IsExist(err) {
+			log.Println("Rename failed:", err)
+			return
+		}
+        
+		// Sometimes, renaming after delete may failed. Sleep for a while then try again
+		time.Sleep(1*time.Second)
+		log.Println("Renaming", exeFile_, "to", exeFile, "again")
+		err = exeFile_.Rename(exeFile)
+    	if err != nil {
+			log.Println("Rename failed:", err)
+		}
 	}
 }
 
