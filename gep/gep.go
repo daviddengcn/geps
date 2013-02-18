@@ -1,9 +1,9 @@
 package gep
 
 import (
+	"fmt"
 	"bytes"
 	"github.com/daviddengcn/go-villa"
-	"log"
 	"strconv"
 	"strings"
 	"unicode"
@@ -123,7 +123,7 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 				if err == nil {
 					ps.Imports.Put(impstr)
 				} else {
-					log.Printf("import %s error: %v", imp, err)
+					p.Error(fmt.Sprintf("import %s error: %v", imp, err))
 				}
 			}
 
@@ -136,12 +136,12 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 					ps.required.Put(inc)
 					err = p.include(ps, villa.Path(inc))
 					if err != nil {
-						log.Printf("include %s failed: %v", inc, err)
+						p.Error(fmt.Sprintf("include %s failed: %v", inc, err))
 					}
 					ps.included.Delete(inc)
 				}
 			} else {
-				log.Printf("include %s error: %v", imp, err)
+				p.Error(fmt.Sprintf("include %s error: %v", imp, err))
 			}
 
 		case "require":
@@ -152,11 +152,11 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 					ps.required.Put(inc)
 					err = p.include(ps, villa.Path(inc))
 					if err != nil {
-						log.Printf("require %s failed: %v", inc, err)
+						p.Error(fmt.Sprintf("require %s failed: %v", inc, err))
 					}
 				}
 			} else {
-				log.Printf("require %s error: %v", imp, err)
+				p.Error(fmt.Sprintf("require %s error: %v", imp, err))
 			}
 			
 		case "includeonly":
@@ -165,7 +165,7 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 			}
 			
 		default:
-			log.Printf("Unknown command %s, ignored!", cmd)
+			p.Error(fmt.Sprintf("Unknown command %s, ignored!", cmd))
 		}
 	}
 }
@@ -270,7 +270,7 @@ func (p *parser) parse(src string, parts *GepParts) (err error) {
 			p.addRaw(parts, source.String())
 		}
 	default:
-		log.Println("Unclosed tag")
+		p.Error("Unclosed tag")
 	}
 	return nil
 }
