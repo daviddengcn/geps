@@ -165,6 +165,7 @@ func (p *parser) addCode(src string, codeType int) {
 
 		case "includeonly":
 			if len(p.includeStack) == 0 {
+				// only available on main part
 				p.IncludeOnly = true
 			}
 
