@@ -2,9 +2,9 @@ package gep
 
 import (
 	"errors"
-	"strings"
 	"fmt"
 	"github.com/daviddengcn/go-villa"
+	"strings"
 	"testing"
 )
 
@@ -15,7 +15,7 @@ func (s simple) Load(path villa.Path) (src string, err error) {
 	if !ok {
 		return "", errors.New(("Not found: " + path).S())
 	}
-	
+
 	return src, nil
 }
 
@@ -64,19 +64,19 @@ func TestParser(t *testing.T) {
 	if !res.Parts.Equals(expectedParts) {
 		t.Errorf("Expected:\n%v\nbut got\n%v", expectedParts, res.Parts)
 	}
-	
+
 	fmt.Println("Imports:", res.Imports)
 	expectedImports := villa.NewStrSet("github.com/daviddengcn/go-villa", "fmt")
 	if !res.Imports.Equals(expectedImports) {
 		t.Errorf("Expected imports: %v, but got %v", expectedImports, res.Imports)
 	}
-	
+
 	fmt.Println("Depends:", res.Depends)
 	expectedDepends := villa.NewStrSet("header", "funcs")
 	if !res.Depends.Equals(expectedDepends) {
 		t.Errorf("Expected depends: %v, but got %v", expectedDepends, res.Depends)
 	}
-	
+
 	fmt.Println("Includeonly:", res.IncludeOnly)
 	if res.IncludeOnly {
 		t.Errorf("Expected iuncludeonly: false")
@@ -115,7 +115,7 @@ func TestParser_ignore(t *testing.T) {
 
 func TestParser_includeonly(t *testing.T) {
 	f := simple{"file": "<%!includeonly%>"}
-	
+
 	src := "<%!includeonly%>"
 	parts, err := Parse(f, src)
 	if err != nil {
@@ -125,7 +125,7 @@ func TestParser_includeonly(t *testing.T) {
 	if parts.IncludeOnly != true {
 		t.Errorf("IncludeOnly is expected to be true")
 	}
-	
+
 	src = `<%!include "file"%>`
 	parts, err = Parse(f, src)
 	if err != nil {

@@ -1,8 +1,8 @@
 package gep
 
 import (
-	"fmt"
 	"bytes"
+	"fmt"
 	"github.com/daviddengcn/go-villa"
 	"strconv"
 	"strings"
@@ -18,12 +18,9 @@ type GepParts struct {
 	Imports villa.StrSet
 	// All included and required paths
 	Depends villa.StrSet
-	
+
 	// Whether the root source is marked as includeonly
 	IncludeOnly bool
-
-	included, required villa.StrSet
-	includeStack villa.StringSlice
 }
 
 // Interface defines some actions for parsing
@@ -46,19 +43,26 @@ type Interface interface {
 
 // Parse parses the source with a predefined Interface.
 func Parse(f Interface, src string) (parts *GepParts, err error) {
-	parts = &GepParts{}
-	p := &parser{f}
-	err = p.parse(src, parts)
+	p := &parser{Interface: f, GepParts: &GepParts{}}
+	err = p.parse(src)
 	if err != nil {
 		return nil, err
 	}
 
-	return parts, nil
+	return p.GepParts, nil
 }
 
+// The internal parser struct
 type parser struct {
 	Interface
+	*GepParts
+
+	included, required villa.StrSet
+	includeStack       villa.StringSlice
 }
+
+
+/** Implementation **/
 
 const (
 	ct_LOCAL = iota
@@ -68,11 +72,11 @@ const (
 	ct_IGNORE
 )
 
-func (p *parser) addRaw(ps *GepParts, src string) {
+func (p *parser) addRaw(src string) {
 	if len(src) == 0 {
 		return
 	} // if
-	ps.Parts = append(ps.Parts, p.GenRawPart(src))
+	p.Parts = append(p.Parts, p.GenRawPart(src))
 }
 
 func sepGlobal(src string) (cmd, remain string) {
@@ -83,32 +87,32 @@ func sepGlobal(src string) (cmd, remain string) {
 			break
 		}
 	}
-	
+
 	return src[:j], src[j:]
 }
 
-func (p *parser) include(ps *GepParts, path villa.Path) error {
-	ps.Depends.Put(path.S())
+func (p *parser) include(path villa.Path) error {
+	p.Depends.Put(path.S())
 	src, err := p.Load(path)
 
 	if err != nil {
 		return err
 	}
 
-	ps.includeStack.Add(path)
-	p.parse(src, ps)
-	ps.includeStack.Pop()
+	p.includeStack.Add(path)
+	p.parse(src)
+	p.includeStack.Pop()
 
 	return nil
 }
 
-func (p *parser) addCode(ps *GepParts, src string, codeType int) {
+func (p *parser) addCode(src string, codeType int) {
 	switch codeType {
 	case ct_LOCAL:
-		ps.Parts = append(ps.Parts, p.GenCodePart(src))
+		p.Parts.Add(p.GenCodePart(src))
 
 	case ct_EVAL:
-		ps.Parts = append(ps.Parts, p.GenEvalPart(src))
+		p.Parts.Add(p.GenEvalPart(src))
 
 	case ct_IGNORE:
 		// Do nothing
@@ -121,7 +125,7 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 			for _, imp := range imports {
 				impstr, err := strconv.Unquote(strings.TrimSpace(imp))
 				if err == nil {
-					ps.Imports.Put(impstr)
+					p.Imports.Put(impstr)
 				} else {
 					p.Error(fmt.Sprintf("import %s error: %v", imp, err))
 				}
@@ -131,14 +135,14 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 			imp := strings.TrimSpace(src)
 			inc, err := strconv.Unquote(imp)
 			if err == nil {
-				if !ps.included.In(inc) {
-					ps.included.Put(inc)
-					ps.required.Put(inc)
-					err = p.include(ps, villa.Path(inc))
+				if !p.included.In(inc) {
+					p.included.Put(inc)
+					p.required.Put(inc)
+					err = p.include(villa.Path(inc))
 					if err != nil {
 						p.Error(fmt.Sprintf("include %s failed: %v", inc, err))
 					}
-					ps.included.Delete(inc)
+					p.included.Delete(inc)
 				}
 			} else {
 				p.Error(fmt.Sprintf("include %s error: %v", imp, err))
@@ -148,9 +152,9 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 			imp := strings.TrimSpace(src)
 			inc, err := strconv.Unquote(imp)
 			if err == nil {
-				if !ps.required.In(inc) {
-					ps.required.Put(inc)
-					err = p.include(ps, villa.Path(inc))
+				if !p.required.In(inc) {
+					p.required.Put(inc)
+					err = p.include(villa.Path(inc))
 					if err != nil {
 						p.Error(fmt.Sprintf("require %s failed: %v", inc, err))
 					}
@@ -158,19 +162,19 @@ func (p *parser) addCode(ps *GepParts, src string, codeType int) {
 			} else {
 				p.Error(fmt.Sprintf("require %s error: %v", imp, err))
 			}
-			
+
 		case "includeonly":
-			if len(ps.includeStack) == 0 {
-				ps.IncludeOnly = true
+			if len(p.includeStack) == 0 {
+				p.IncludeOnly = true
 			}
-			
+
 		default:
 			p.Error(fmt.Sprintf("Unknown command %s, ignored!", cmd))
 		}
 	}
 }
 
-func (p *parser) parse(src string, parts *GepParts) (err error) {
+func (p *parser) parse(src string) (err error) {
 	/*
 		Status Transform
 
@@ -212,7 +216,7 @@ func (p *parser) parse(src string, parts *GepParts) (err error) {
 			switch r {
 			case '%':
 				status, tp = C1, ct_LOCAL
-				p.addRaw(parts, source.String())
+				p.addRaw(source.String())
 				source.Reset()
 
 			default:
@@ -253,7 +257,7 @@ func (p *parser) parse(src string, parts *GepParts) (err error) {
 			switch r {
 			case '>':
 				status = R
-				p.addCode(parts, source.String(), tp)
+				p.addCode(source.String(), tp)
 				source.Reset()
 
 			default:
@@ -267,7 +271,7 @@ func (p *parser) parse(src string, parts *GepParts) (err error) {
 	switch status {
 	case R:
 		if source.Len() > 0 {
-			p.addRaw(parts, source.String())
+			p.addRaw(source.String())
 		}
 	default:
 		p.Error("Unclosed tag")
