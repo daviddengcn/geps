@@ -82,6 +82,7 @@ var mediaSuffixes []string = []string{
 	".png",
 	".gif",
 	".webp",
+	".zip",
 	".css"}
 
 var webRoot villa.Path = `./web`
