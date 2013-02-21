@@ -1,138 +1,238 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/daviddengcn/geps/gep"
 	"github.com/daviddengcn/go-villa"
-	"github.com/daviddengcn/gsp/parser"
 	"log"
 	"os"
+	"strconv"
 	"strings"
-	"time"
 )
 
 const (
-	fn_GSP_DIR      = "gsp"
-	fn_SOURCE_DIR   = "src"
-	fn_EXE_DIR      = "exe"
-	fn_TEMPLATE_DIR = "tmpl"
+	s_SUFFIX = ".gep"
 
-	fn_TEMPLATE_GO = "tmpl.go"
+	fn_WEB_DIR    = "web"
+	fn_SOURCE_DIR = "src"
+	fn_GEPSVR_DIR = "gepsvr"
+
+	fn_GEPSVR_GO = "gepsvr.go"
 )
 
-func needUpdate(srcs, dsts []villa.Path) bool {
-	var srcInfo, dstInfo os.FileInfo
-
-	for _, src := range srcs {
-		info, err := src.Stat()
-		if err == nil {
-			if srcInfo == nil || srcInfo.ModTime().Before(info.ModTime()) {
-				srcInfo = info
-			}
-		}
-	}
-	if srcInfo == nil {
-		// No source file found!
-		return false
-	} // if
-
-	for _, dst := range dsts {
-		info, err := dst.Stat()
-		if err == nil {
-			if dstInfo == nil || dstInfo.ModTime().Before(info.ModTime()) {
-				dstInfo = info
-			}
-		}
-	}
-	if dstInfo == nil {
-		// No destination file found!
-		return true
-	}
-
-	return dstInfo.ModTime().Before(srcInfo.ModTime())
-}
-
 type monitor struct {
-	root     villa.Path
-	gspPath  villa.Path
-	srcPath  villa.Path
-	exePath  villa.Path
-	tmplFile villa.Path
-	parser   *gp.Parser
+	root       villa.Path
+	webPath    villa.Path
+	srcPath    villa.Path
+	checkFile  villa.Path
+	exeFile    villa.Path
+	gepsvrFile villa.Path
 }
 
-func newMonitor(root villa.Path) *monitor {
+func newMonitor(web, root villa.Path) *monitor {
 	m := &monitor{
 		root: root,
-		//gspPath: root.Join(fn_GSP_DIR),
-		gspPath:  root,
-		srcPath:  root.Join(fn_SOURCE_DIR),
-		exePath:  root.Join(fn_EXE_DIR),
-		tmplFile: root.Join(fn_TEMPLATE_DIR, fn_TEMPLATE_GO)}
 
-	m.parser = gp.NewParser(func(fn villa.Path) (string, error) {
-		src, err := m.gspFile(fn).ReadFile()
-		if err != nil {
-			return "", err
-		} // if
+		webPath: web,
 
-		return string(src), nil
-	})
+		srcPath:    root.Join(fn_SOURCE_DIR),
+		gepsvrFile: root.Join(fn_GEPSVR_DIR, fn_GEPSVR_GO)}
 
 	m.srcPath.MkdirAll(0777)
-	m.exePath.MkdirAll(0777)
 
 	return m
 }
 
-func isGsp(fn villa.Path) bool {
-	return strings.ToLower(fn.Ext()) == ".gsp"
+func (m *monitor) updateCheckExeFiles(check, exe villa.Path) {
+	m.checkFile = check
+	m.exeFile = exe
 }
 
-func (m *monitor) gspFile(gsp villa.Path) villa.Path {
-	return m.gspPath.Join(gsp)
-}
-
-func (m *monitor) srcFile(gsp villa.Path) villa.Path {
-	return m.srcPath.Join(gsp + ".go")
-}
-
-func (m *monitor) exeFile(gsp villa.Path) villa.Path {
-	return m.exePath.Join(gsp + ".exe")
-}
-
-func (m *monitor) cmplFile(gsp villa.Path) villa.Path {
-	return m.srcPath.Join(gsp + ".go.log")
-}
-
-func (m *monitor) findChangedFiles() (changed []villa.Path) {
-	files, _ := m.gspPath.ReadDir()
-	for _, f := range files {
-		fn := villa.Path(f.Name())
-		if isGsp(fn) {
-			if needUpdate([]villa.Path{m.gspFile(fn), m.tmplFile}, []villa.Path{m.exeFile(fn), m.cmplFile(fn)}) {
-				changed = append(changed, fn)
-			} // if
+func (m *monitor) scanFiles() (files map[villa.Path]os.FileInfo) {
+	files = make(map[villa.Path]os.FileInfo)
+	m.webPath.Walk(func(path villa.Path, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && strings.ToLower(path.Ext()) == s_SUFFIX {
+			rel, err := m.webPath.Rel(path)
+			if err == nil {
+				files[rel] = info
+			}
 		} // if
-	} // for f
+		return nil
+	})
 
-	return changed
+	return
 }
 
-func (m *monitor) generate(gsp villa.Path) error {
-	gspFile := m.gspFile(gsp)
-	srcFile := m.srcFile(gsp)
-	fmt.Println("Generating", srcFile, "from", gspFile, "...")
-	gspContents, err := m.parser.Load(gsp)
+func (m *monitor) needUpdate(files map[villa.Path]os.FileInfo) bool {
+	exeInfo, err := m.checkFile.Stat()
+
 	if err != nil {
-		return err
+		return true
+	}
+
+	for _, info := range files {
+		if exeInfo.ModTime().Before(info.ModTime()) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func pathToSrcName(path villa.Path) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\\' || r == '/' {
+			return '_'
+		}
+
+		return r
+	}, path.S())
+}
+
+func pathToUrl(path villa.Path) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\\' {
+			return '/'
+		}
+
+		return r
+	}, path.S())
+}
+
+func greater(a, b villa.Path) bool {
+	if len(a) > len(b) {
+		return true
+	}
+
+	return a > b
+}
+
+func (m *monitor) genSourceNames(files map[villa.Path]os.FileInfo) (srcPath map[string]villa.Path) {
+	srcPath = make(map[string]villa.Path)
+	pathSrc := make(map[villa.Path]string)
+	for path := range files {
+		src := pathToSrcName(path)
+		//log.Println("src:", src)
+		for {
+			p, ok := srcPath[src]
+			if !ok {
+				srcPath[src], pathSrc[path] = path, src
+				break
+			}
+
+			if greater(p, path) {
+				// replace (src, p) with (src, path)
+				srcPath[src], pathSrc[path] = path, src
+				// try find another src for p
+				path = p
+			}
+			src += "_"
+		}
+	}
+
+	return
+}
+
+type sourceGenerator struct {
+	m *monitor
+}
+
+func (sg *sourceGenerator) Load(path villa.Path) (string, error) {
+	//log.Println("Reading", path)
+	src, err := sg.m.webPath.Join(path).ReadFile()
+	if err != nil {
+		return "", err
 	} // if
 
-	parts, err := m.parser.Parse(string(gspContents))
-	if err != nil {
-		return err
+	return string(src), nil
+}
+
+func (sg *sourceGenerator) GenRawPart(src string) interface{} {
+	return fmt.Sprintf("__print__(__response__, %q)\n", src)
+}
+
+func (sg *sourceGenerator) GenCodePart(src string) interface{} {
+	return string(src) + "\n"
+}
+
+func (sg *sourceGenerator) GenEvalPart(src string) interface{} {
+	return fmt.Sprintf("__print__(__response__, %s)\n", src)
+}
+
+func (sg *sourceGenerator) Error(message string) {
+	log.Println(message)
+}
+
+const sTemplate = `package main
+
+import(
+#_imports_#)
+
+func init() {
+	fmt.Print()
+	strings.TrimSpace("")
+	registerPath(#_url_path_#, __process_#_func_name_#)
+}
+
+func __process_#_func_name_#(response http.ResponseWriter, request *http.Request) {
+	__response__ := response
+	_ = __response__
+#_body_#}
+`
+
+func genGoSource(parts *gep.GepParts, url, func_name string) string {
+	parts.Imports.Put("fmt", "net/http", "strings")
+	//log.Println("Imports:", parts.Imports)
+	src := sTemplate
+	var out bytes.Buffer
+	for imp := range parts.Imports {
+		out.WriteString("\t" + strconv.Quote(imp) + "\n")
 	}
-	source := []byte(parts.GoSource())
-	return srcFile.WriteFile([]byte(source), 0666)
+	src = strings.Replace(src, "#_imports_#", out.String(), -1)
+	src = strings.Replace(src, "#_url_path_#", strconv.Quote("/"+url), -1)
+	src = strings.Replace(src, "#_func_name_#", func_name, -1)
+
+	out.Reset()
+	for _, part := range parts.Parts {
+		out.WriteString("\t" + fmt.Sprint(part))
+	}
+	src = strings.Replace(src, "#_body_#", out.String(), -1)
+	return src
+}
+
+func (m *monitor) parse(srcFiles map[string]villa.Path) error {
+	cnt := 0
+	sg := sourceGenerator{m: m}
+	for src, path := range srcFiles {
+		url := pathToUrl(path)
+		gepSrc, err := sg.Load(path)
+		if err == nil {
+			parts, err := gep.Parse(&sg, gepSrc)
+			if err == nil {
+				if parts.IncludeOnly {
+					log.Println(path, "IncludeOnly, ignored!")
+					continue
+				}
+				goSrc := genGoSource(parts, url, fmt.Sprint(cnt))
+				cnt++
+
+				srcFile := m.srcPath.Join(src + ".go")
+				//fmt.Println("Generating", srcFile, "...")
+				err = srcFile.WriteFile([]byte(goSrc), 0666)
+				if err != nil {
+					sg.Error(fmt.Sprint(err))
+				}
+			} else {
+				sg.Error(fmt.Sprint(err))
+			}
+		}
+	}
+
+	return nil
 }
 
 func copyFile(src, dst villa.Path) (err error) {
@@ -152,28 +252,26 @@ func safeLink(src, dst villa.Path) (err error) {
 	return copyFile(src, dst)
 }
 
-func (m *monitor) compile(gsp villa.Path) {
-	tmpDir, err := villa.Path("").TempDir("gsp_")
+func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
+	tmpDir, err := villa.Path("").TempDir("gep_")
+	if err != nil {
+		log.Println(err)
+		return err
+	} // if
+
+	gepsvrGo := tmpDir.Join(fn_GEPSVR_GO)
+	err = safeLink(m.gepsvrFile, gepsvrGo)
 	if err != nil {
 		log.Println(err)
 		return
 	} // if
 
-	tmpTmplGo := tmpDir.Join(fn_TEMPLATE_GO)
-	err = safeLink(m.tmplFile, tmpTmplGo)
-	if err != nil {
-		log.Println(err)
-		return
-	} // if
-	tmpSrc := tmpDir.Join(gsp + ".go")
-	err = safeLink(m.srcFile(gsp), tmpSrc)
-	if err != nil {
-		log.Println(err)
-		return
-	} // if
+	for src := range srcFiles {
+		safeLink(m.srcPath.Join(src+".go"), tmpDir.Join(src+".go"))
+	}
 
-	exeFile_ := m.exeFile(gsp) + "_"
-	cmplFile := m.cmplFile(gsp)
+	exeFile := m.exeFile
+	cmplFile := villa.Path(m.exeFile + ".log")
 
 	cf, err := cmplFile.Create()
 	if err != nil {
@@ -182,70 +280,36 @@ func (m *monitor) compile(gsp villa.Path) {
 	}
 	defer cf.Close()
 
-	log.Println("Compiling", tmpSrc, tmpTmplGo, "to", exeFile_)
-	cmd := villa.Path("go").Command("build", "-o", exeFile_.S(), tmpSrc.S(), tmpTmplGo.S())
+	log.Println("Compiling", tmpDir, "to", exeFile)
+
+	cmd := villa.Path("go").Command("build", "-o", exeFile.S())
 	cmd.Stdout = cf
 	cmd.Stderr = cf
+	cmd.Dir = tmpDir.S()
 	err = cmd.Run()
 
 	if err != nil {
 		log.Println("Compiling failed:", err)
-		return
+		return err
 	} // if
 
-	exeFile := m.exeFile(gsp)
-	if exeFile.Exists() {
-		log.Println("Deleting", exeFile)
-		err = exeFile.Remove()
-		if err != nil {
-			log.Println("Remove failed:", err)
-			return
-		}
-	}
+	return nil
+}
 
-	log.Println("Renaming", exeFile_, "to", exeFile)
-	err = exeFile_.Rename(exeFile)
+func (m *monitor) run() (changed bool) {
+	files := m.scanFiles()
+	if !m.needUpdate(files) {
+		return false
+	}
+	srcFiles := m.genSourceNames(files)
+	log.Println("Compiling:", srcFiles)
+	err := m.parse(srcFiles)
 	if err != nil {
-		if !os.IsExist(err) {
-			log.Println("Rename failed:", err)
-			return
-		}
-
-		// Sometimes, renaming after delete may failed. Sleep for a while then try again
-		time.Sleep(1 * time.Second)
-		log.Println("Renaming", exeFile_, "to", exeFile, "again")
-		err = exeFile_.Rename(exeFile)
-		if err != nil {
-			log.Println("Rename failed:", err)
-		}
+		return false
 	}
-}
-
-func (m *monitor) run() {
-	files := m.findChangedFiles()
-	if len(files) > 0 {
-		log.Printf("%d changed files found: %v", len(files), files)
-	} // if
-
-	for _, gsp := range files {
-		err := m.generate(gsp)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		} // if
-		m.compile(gsp)
-	} // for file
-}
-
-func main() {
-	root := villa.Path(".")
-	root, _ = root.Abs()
-
-	log.Println("Monitoring", root, "...")
-
-	m := newMonitor(root)
-	for {
-		m.run()
-		time.Sleep(1 * time.Second)
+	err = m.compile(srcFiles)
+	if err != nil {
+		return false
 	}
+	return true
 }

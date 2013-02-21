@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"log"
 	"strings"
 	"net/http"
 	"html/template"
@@ -14,6 +16,7 @@ var webRoot villa.Path = `./web`
 var processors map[string]http.HandlerFunc = map[string]http.HandlerFunc{}
 
 func registerPath(path string, f http.HandlerFunc) {
+	log.Println("Register path:", path)
 	processors[path] = f
 }
 
@@ -27,9 +30,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	host := ":8081"
+	if len(os.Args) > 1 {
+		host = os.Args[1]
+	}
 	http.HandleFunc("/", handler)
-	fmt.Println("Listening at 8081")
-	http.ListenAndServe(":8081", nil)
+	log.Println("Back server listening at", host)
+	http.ListenAndServe(host, nil)
 }
 
 

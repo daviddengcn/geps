@@ -3,78 +3,143 @@ package main
 import (
 	"fmt"
 	"github.com/daviddengcn/go-villa"
+	"io"
+	"log"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
+	"time"
+	"os/exec"
 )
 
-const s_SUFFIX = ".gep"
-
-type HandlerInfo struct {
-	w    http.ResponseWriter
-	r    *http.Request
-	done chan bool
+type BackHost struct {
+	sync.RWMutex
+	host string
 }
 
-func (h *HandlerInfo) Done() {
-	h.done <- true
+func (h *BackHost) Get() string {
+	h.RLock()
+	defer h.RUnlock()
+
+	return h.host
 }
 
-var gepMapQueue chan HandlerInfo
+func (h *BackHost) Set(val string) {
+	h.Lock()
+	defer h.Unlock()
 
-type ReigsterInfo struct {
-	path        string
-	handleQueue chan HandlerInfo
+	h.host = val
 }
 
-var gRegisterQueue chan ReigsterInfo
+var backHost BackHost
 
-func handleGepMap() {
-	fmt.Println("Start handling GEP map...")
-	queueMap := make(map[string]chan HandlerInfo)
+func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
+	cmd = exeFile.Command(host)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Start()
+	if err != nil {
+		return nil
+	}
+	
+	log.Printf("Waiting for new back server %s starting...\n", host)
+	time.Sleep(1 * time.Second)
+	
+	return cmd
+}
+
+func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
+	defer lock.Unlock()
+	
+	log.Println("Waiting for old host processing current requests", exeFile)
+	time.Sleep(10 * time.Second)
+	err := cmd.Process.Kill()
+	if err != nil {
+		log.Println("Error killing old back server:", err, exeFile)
+	}
+	log.Println("Waiting for old host dying", exeFile)
+	time.Sleep(10 * time.Second)
+	log.Println("Deleting", exeFile)
+	err = exeFile.Remove()
+	if err != nil {
+		log.Println("Deleting", exeFile, "error:", err)
+	} else {
+		log.Println(exeFile, "deleted!", )
+	}
+}
+
+func compilingLoop() {
+	root := villa.Path(".")
+	root, _ = root.Abs()
+
+	log.Println("Monitoring", root, "...")
+
+	exePaths := villa.StringSlice{"gepsvr-1.exe", "gepsvr-2.exe", "gepsvr-3.exe"}
+	backHosts := villa.StringSlice{"localhost:8081", "localhost:8082", "localhost:8083"}
+	locks := []*sync.Mutex{&sync.Mutex{}, &sync.Mutex{}, &sync.Mutex{}}
+	
+	current, last := 0, 0
+	m := newMonitor(root.Join("web"), root)
+	var cmd *exec.Cmd = nil
+	
+	m.updateCheckExeFiles(root.Join(exePaths[last]), root.Join(exePaths[current]))
 	for {
-		select {
-		case info := <-gepMapQueue:
-			fmt.Println("Mapping", info.r.URL.Path)
-			q, ok := queueMap[info.r.URL.Path]
-			if !ok {
-				http.NotFound(info.w, info.r)
-				info.Done()
-			} else {
-				q <- info
-			}
+		func() {
+			locks[current].Lock()
+			defer locks[current].Unlock()
 			
-		case info := <-gRegisterQueue:
-			queueMap[info.path] = info.handleQueue
-			fmt.Println("Path", info.path, "registered!")
-		}
+			if m.run() || cmd == nil {
+				newCmd := startBackServer(root.Join(exePaths[current]), backHosts[current])
+				if newCmd != nil {
+					backHost.Set(backHosts[current])
+					
+					if cmd != nil {
+						locks[last].Lock()
+						go killBackServer(cmd, root.Join(exePaths[last]), locks[last])
+						cmd = nil
+					}
+					
+					cmd = newCmd
+					last, current = current, (current + 1) % len(exePaths)
+					m.updateCheckExeFiles(root.Join(exePaths[last]), root.Join(exePaths[current]))
+				}
+				time.Sleep(1 * time.Second)
+			} else {
+				time.Sleep(1 * time.Second)
+			}
+			}()
 	}
 }
 
 func init() {
-	gRegisterQueue = make(chan ReigsterInfo)
-	gepMapQueue = make(chan HandlerInfo)
-	go handleGepMap()
+	backHost.Set("localhost:8081")
+	go compilingLoop()
 }
 
-func gepPageHandler(path string, q chan HandlerInfo) {
-	for info := range q {
-		//fmt.Fprintf(info.w, "Gep page at " + path)
-		http.ServeFile(info.w, info.r, webRoot.Join(path).S())
-		info.Done()
-	}
-}
-
-func registerPath(path string) {
-	q := make(chan HandlerInfo)
-	gRegisterQueue <- ReigsterInfo{path: path, handleQueue: q}
-	
-	go gepPageHandler(path, q)
-}
+var client http.Client
 
 func handleGep(w http.ResponseWriter, r *http.Request) {
-	info := HandlerInfo{w: w, r: r, done: make(chan bool)}
-	gepMapQueue <- info
-	<-info.done
+	req := *r
+
+	req.Host = backHost.Get()
+	req.URL.Scheme = "http"
+	req.URL.Host = req.Host
+	req.URL.Path = r.URL.Path
+	req.RequestURI = ""
+
+	resp, err := client.Do(&req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Internal error accessing %s: %v", r.URL.Path, err), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 var mediaSuffixes []string = []string{
@@ -110,9 +175,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	registerPath("/index.gep")
-	
 	http.HandleFunc("/", handler)
-	fmt.Println("Listening at 8080")
+	log.Println("Front server listening at 8080")
 	http.ListenAndServe(":8080", nil)
 }
