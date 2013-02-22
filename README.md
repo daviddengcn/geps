@@ -1,5 +1,5 @@
-Go Server Page(GSP)
+Go Embedded Page(GEP)
 ===================
-GSP is a framework for write web applications. It's working in a similar mechanism to JSP.
+GEP is a framework for write web applications. It's working in a similar mechanism to JSP. GEPS is the http server for GEP files.
 
-Visit GSP homepage for more details: http://gsp.daviddengcn.com/
+Visit GEPS homepage for more details: http://geps.daviddengcn.com/
