@@ -7,10 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
-	"os/exec"
 )
 
 type BackHost struct {
@@ -42,16 +42,16 @@ func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 	if err != nil {
 		return nil
 	}
-	
+
 	log.Printf("Waiting for new back server %s starting...\n", host)
 	time.Sleep(1 * time.Second)
-	
+
 	return cmd
 }
 
 func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 	defer lock.Unlock()
-	
+
 	log.Println("Waiting for old host processing current requests", exeFile)
 	time.Sleep(10 * time.Second)
 	err := cmd.Process.Kill()
@@ -65,7 +65,7 @@ func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 	if err != nil {
 		log.Println("Deleting", exeFile, "error:", err)
 	} else {
-		log.Println(exeFile, "deleted!", )
+		log.Println(exeFile, "deleted!")
 	}
 }
 
@@ -78,37 +78,37 @@ func compilingLoop() {
 	exePaths := villa.StringSlice{"gepsvr-1.exe", "gepsvr-2.exe", "gepsvr-3.exe"}
 	backHosts := villa.StringSlice{"localhost:8081", "localhost:8082", "localhost:8083"}
 	locks := []*sync.Mutex{&sync.Mutex{}, &sync.Mutex{}, &sync.Mutex{}}
-	
+
 	current, last := 0, 0
 	m := newMonitor(root.Join("web"), root)
 	var cmd *exec.Cmd = nil
-	
+
 	m.updateCheckExeFiles(root.Join(exePaths[last]), root.Join(exePaths[current]))
 	for {
 		func() {
 			locks[current].Lock()
 			defer locks[current].Unlock()
-			
+
 			if m.run() || cmd == nil {
 				newCmd := startBackServer(root.Join(exePaths[current]), backHosts[current])
 				if newCmd != nil {
 					backHost.Set(backHosts[current])
-					
+
 					if cmd != nil {
 						locks[last].Lock()
 						go killBackServer(cmd, root.Join(exePaths[last]), locks[last])
 						cmd = nil
 					}
-					
+
 					cmd = newCmd
-					last, current = current, (current + 1) % len(exePaths)
+					last, current = current, (current+1)%len(exePaths)
 					m.updateCheckExeFiles(root.Join(exePaths[last]), root.Join(exePaths[current]))
 				}
 				time.Sleep(1 * time.Second)
 			} else {
 				time.Sleep(1 * time.Second)
 			}
-			}()
+		}()
 	}
 }
 
@@ -148,6 +148,7 @@ var mediaSuffixes []string = []string{
 	".gif",
 	".webp",
 	".zip",
+	".js",
 	".css"}
 
 var webRoot villa.Path = `./web`
@@ -164,6 +165,10 @@ func isMediaFile(lowerPath string) bool {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	lowerPath := strings.ToLower(r.URL.Path)
+	if strings.HasSuffix(lowerPath, "/") {
+		r.URL.Path = r.URL.Path + "index.gep"
+		lowerPath = strings.ToLower(r.URL.Path)
+	}
 	if strings.HasSuffix(lowerPath, s_SUFFIX) {
 		handleGep(w, r)
 		return

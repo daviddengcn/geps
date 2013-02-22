@@ -164,7 +164,7 @@ func (sg *sourceGenerator) GenEvalPart(src string) interface{} {
 }
 
 func (sg *sourceGenerator) Error(message string) {
-	log.Println(message)
+	log.Println("GEP parse error:", message)
 }
 
 const sTemplate = `package main
@@ -214,6 +214,7 @@ func (m *monitor) parse(srcFiles map[string]villa.Path) error {
 			parts, err := gep.Parse(&sg, gepSrc)
 			if err == nil {
 				if parts.IncludeOnly {
+					delete(srcFiles, src)
 					log.Println(path, "IncludeOnly, ignored!")
 					continue
 				}
@@ -247,32 +248,35 @@ func safeLink(src, dst villa.Path) (err error) {
 	err = src.Symlink(dst)
 	if err == nil {
 		return nil
-	} // if
+	}
 
 	return copyFile(src, dst)
 }
 
 func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
+	// Create temporary directory
 	tmpDir, err := villa.Path("").TempDir("gep_")
 	if err != nil {
 		log.Println(err)
 		return err
-	} // if
+	}
 
+	// Link gepsrv.go
 	gepsvrGo := tmpDir.Join(fn_GEPSVR_GO)
 	err = safeLink(m.gepsvrFile, gepsvrGo)
 	if err != nil {
 		log.Println(err)
 		return
-	} // if
+	}
 
+	// Link source go files
 	for src := range srcFiles {
 		safeLink(m.srcPath.Join(src+".go"), tmpDir.Join(src+".go"))
 	}
 
 	exeFile := m.exeFile
 	cmplFile := villa.Path(m.exeFile + ".log")
-
+	// Open log file
 	cf, err := cmplFile.Create()
 	if err != nil {
 		log.Println(err)
@@ -282,6 +286,7 @@ func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
 
 	log.Println("Compiling", tmpDir, "to", exeFile)
 
+	// Compile
 	cmd := villa.Path("go").Command("build", "-o", exeFile.S())
 	cmd.Stdout = cf
 	cmd.Stderr = cf
@@ -291,7 +296,7 @@ func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
 	if err != nil {
 		log.Println("Compiling failed:", err)
 		return err
-	} // if
+	}
 
 	return nil
 }

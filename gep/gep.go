@@ -275,7 +275,7 @@ func (p *parser) parse(src string) (err error) {
 			p.addRaw(source.String())
 		}
 	default:
-		p.Error("Unclosed tag")
+		p.Error("Unclosed tag " + source.String())
 	}
 	return nil
 }
