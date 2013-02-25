@@ -13,26 +13,8 @@ import (
 	"time"
 )
 
-type BackHost struct {
-	sync.RWMutex
-	host string
-}
-
-func (h *BackHost) Get() string {
-	h.RLock()
-	defer h.RUnlock()
-
-	return h.host
-}
-
-func (h *BackHost) Set(val string) {
-	h.Lock()
-	defer h.Unlock()
-
-	h.host = val
-}
-
-var backHost BackHost
+// Storing the host of the current back server
+var backHost villa.AtomicBox
 
 func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 	cmd = exeFile.Command(host)
@@ -50,6 +32,7 @@ func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 }
 
 func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
+	// release to lock to allow the entry reused.
 	defer lock.Unlock()
 
 	log.Println("Waiting for old host processing current requests", exeFile)
@@ -58,8 +41,10 @@ func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 	if err != nil {
 		log.Println("Error killing old back server:", err, exeFile)
 	}
+	
 	log.Println("Waiting for old host dying", exeFile)
 	time.Sleep(10 * time.Second)
+	
 	log.Println("Deleting", exeFile)
 	err = exeFile.Remove()
 	if err != nil {
@@ -74,35 +59,53 @@ func compilingLoop() {
 	root, _ = root.Abs()
 
 	log.Println("Monitoring", root, "...")
-
-	exePaths := villa.StringSlice{"gepsvr-1.exe", "gepsvr-2.exe", "gepsvr-3.exe"}
-	backHosts := villa.StringSlice{"localhost:8081", "localhost:8082", "localhost:8083"}
-	locks := []*sync.Mutex{&sync.Mutex{}, &sync.Mutex{}, &sync.Mutex{}}
+	
+	base_PORT := 8081
+	rr_NUM := 3
+	
+	type exeEntry struct {
+		sync.Mutex
+		exePath villa.Path
+		backHost string
+	}
+	
+	// Initialize entries
+	entries := make([]exeEntry, rr_NUM)
+	
+	for i := range entries {
+		entries[i].exePath = root.Join(fmt.Sprintf("gepsvr-%d.exe", (1 + i)))
+		entries[i].backHost = fmt.Sprintf("localhost:%d", (base_PORT + i))
+	}
 
 	current, last := 0, 0
 	m := newMonitor(root.Join("web"), root)
 	var cmd *exec.Cmd = nil
 
-	m.updateCheckExeFiles(root.Join(exePaths[last]), root.Join(exePaths[current]))
+	m.updateCheckExeFiles(entries[last].exePath, entries[current].exePath)
 	for {
 		func() {
-			locks[current].Lock()
-			defer locks[current].Unlock()
+			// lock the current entry, block if it is still waiting for killing
+			entries[current].Lock()
+			defer entries[current].Unlock()
 
 			if m.run() || cmd == nil {
-				newCmd := startBackServer(root.Join(exePaths[current]), backHosts[current])
+				// No server started yet, or a new back server ready
+				// try start a back server
+				newCmd := startBackServer(entries[current].exePath, entries[current].backHost)
 				if newCmd != nil {
-					backHost.Set(backHosts[current])
+					// switch to new back server
+					backHost.Set(entries[current].backHost)
 
 					if cmd != nil {
-						locks[last].Lock()
-						go killBackServer(cmd, root.Join(exePaths[last]), locks[last])
+						// kill the outdated back server
+						entries[last].Lock()
+						go killBackServer(cmd, entries[last].exePath, &entries[last].Mutex)
 						cmd = nil
 					}
 
 					cmd = newCmd
-					last, current = current, (current+1)%len(exePaths)
-					m.updateCheckExeFiles(root.Join(exePaths[last]), root.Join(exePaths[current]))
+					last, current = current, (current + 1)%rr_NUM
+					m.updateCheckExeFiles(entries[last].exePath, entries[current].exePath)
 				}
 				time.Sleep(1 * time.Second)
 			} else {
@@ -122,7 +125,7 @@ var client http.Client
 func handleGep(w http.ResponseWriter, r *http.Request) {
 	req := *r
 
-	req.Host = backHost.Get()
+	req.Host = backHost.Get().(string)
 	req.URL.Scheme = "http"
 	req.URL.Host = req.Host
 	req.URL.Path = r.URL.Path
