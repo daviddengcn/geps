@@ -30,14 +30,14 @@ type monitor struct {
 	gepsvrFile villa.Path
 }
 
-func newMonitor(web, root villa.Path) *monitor {
+func newMonitor(web, root, codeRoot villa.Path) *monitor {
 	m := &monitor{
 		root: root,
 
 		webPath: web,
 
 		srcPath:    root.Join(fn_SOURCE_DIR),
-		gepsvrFile: root.Join(fn_GEPSVR_DIR, fn_GEPSVR_GO)}
+		gepsvrFile: codeRoot.Join(fn_GEPSVR_DIR, fn_GEPSVR_GO)}
 
 	m.srcPath.MkdirAll(0777)
 
@@ -255,7 +255,7 @@ func safeLink(src, dst villa.Path) (err error) {
 
 func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
 	// Create temporary directory
-	tmpDir, err := villa.Path("").TempDir("gep_")
+	tmpDir, err := villa.Path(gConf.String("web.tempdir", "")).TempDir("gep_")
 	if err != nil {
 		log.Println(err)
 		return err

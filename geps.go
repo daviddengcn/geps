@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/daviddengcn/go-ljson-conf"
 	"github.com/daviddengcn/go-villa"
 	"io"
 	"log"
@@ -16,6 +17,12 @@ import (
 // Storing the host of the current back server
 var backHost villa.AtomicBox
 
+var (
+	gWaitBeforeKill  time.Duration = 10 * time.Second
+	gWaitBeforeDel   time.Duration = 1 * time.Second
+	gWaitBeforeStart time.Duration = 1 * time.Second
+)
+
 func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 	cmd = exeFile.Command(host)
 	cmd.Stdout = os.Stdout
@@ -26,7 +33,7 @@ func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 	}
 
 	log.Printf("Waiting for new back server %s starting...\n", host)
-	time.Sleep(1 * time.Second)
+	time.Sleep(gWaitBeforeStart)
 
 	return cmd
 }
@@ -36,17 +43,17 @@ func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 	defer lock.Unlock()
 
 	log.Println("Waiting for old host processing current requests", exeFile)
-	time.Sleep(10 * time.Second)
+	time.Sleep(gWaitBeforeKill)
 	err := cmd.Process.Kill()
 	if err != nil {
 		log.Println("Error killing old back server:", err, exeFile)
 	}
-	
+
 	log.Println("Waiting for old host dying", exeFile)
 	stat, err := cmd.Process.Wait()
 	log.Println("Host killed:", stat, exeFile)
-	
-	time.Sleep(1 * time.Second)
+
+	time.Sleep(gWaitBeforeDel)
 	log.Println("Deleting", exeFile)
 	err = exeFile.Remove()
 	if err != nil {
@@ -57,30 +64,36 @@ func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 }
 
 func compilingLoop() {
-	root := villa.Path(".")
-	root, _ = root.Abs()
+	gWaitBeforeKill = time.Duration(gConf.Int("back.killwait", 10)) * time.Second
+	gWaitBeforeDel = time.Duration(gConf.Int("back.delwait", 1)) * time.Second
+	gWaitBeforeStart = time.Duration(gConf.Int("back.startwait", 1)) * time.Second
 
-	log.Println("Monitoring", root, "...")
-	
-	base_PORT := 8081
-	rr_NUM := 3
-	
+	codeRoot, _ := villa.Path(gConf.String("code.root", ".")).Abs()
+	log.Println("Code root:", codeRoot)
+
+	webRoot, _ := villa.Path(gConf.String("web.root", ".")).Abs()
+	log.Println("Monitoring", webRoot, "...")
+
+	backPorts := gConf.IntList("back.ports", []int{8081, 8082, 8083})
+	log.Println("Back ports:", backPorts)
+	rr_NUM := len(backPorts)
+
 	type exeEntry struct {
 		sync.Mutex
-		exePath villa.Path
+		exePath  villa.Path
 		backHost string
 	}
-	
+
 	// Initialize entries
 	entries := make([]exeEntry, rr_NUM)
-	
+
 	for i := range entries {
-		entries[i].exePath = root.Join(fmt.Sprintf("gepsvr-%d.exe", (1 + i)))
-		entries[i].backHost = fmt.Sprintf("localhost:%d", (base_PORT + i))
+		entries[i].exePath = webRoot.Join(fmt.Sprintf("gepsvr-%d.exe", (1 + i)))
+		entries[i].backHost = fmt.Sprintf("localhost:%d", backPorts[i])
 	}
 
 	current, last := 0, 0
-	m := newMonitor(root.Join("web"), root)
+	m := newMonitor(webRoot.Join("web"), webRoot, codeRoot)
 	var cmd *exec.Cmd = nil
 
 	m.updateCheckExeFiles(entries[last].exePath, entries[current].exePath)
@@ -106,7 +119,7 @@ func compilingLoop() {
 					}
 
 					cmd = newCmd
-					last, current = current, (current + 1)%rr_NUM
+					last, current = current, (current+1)%rr_NUM
 					m.updateCheckExeFiles(entries[last].exePath, entries[current].exePath)
 				}
 				time.Sleep(1 * time.Second)
@@ -117,7 +130,7 @@ func compilingLoop() {
 	}
 }
 
-func init() {
+func startCompilingLoop() {
 	backHost.Set("localhost:8081")
 	go compilingLoop()
 }
@@ -184,12 +197,31 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var confFile string
+
+func init() {
+	confFile = "geps.conf"
+}
+
+var gConf *ljconf.Conf
+
+func loadConf() {
+	var err error
+	gConf, err = ljconf.Load(confFile)
+	if err != nil {
+		log.Println("Load configure files:", err)
+	}
+}
+
 func main() {
-	host := ":8080"
+	loadConf()
+	startCompilingLoop()
+
+	addr := gConf.String("listen.addr", ":8080")
 	if len(os.Args) > 1 {
-		host = os.Args[1]
+		addr = os.Args[1]
 	}
 	http.HandleFunc("/", handler)
-	log.Println("Front server listening at", host)
-	http.ListenAndServe(host, nil)
+	log.Println("Front server listening at", addr)
+	http.ListenAndServe(addr, nil)
 }
