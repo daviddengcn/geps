@@ -16,30 +16,27 @@ const (
 
 	fn_WEB_DIR    = "web"
 	fn_SOURCE_DIR = "src"
-	fn_GEPSVR_DIR = "gepsvr"
-
-	fn_GEPSVR_GO = "gepsvr.go"
+	fn_GEPSVR_GO  = "gepsvr.go"
 )
 
 type monitor struct {
-	root       villa.Path
-	webPath    villa.Path
-	srcPath    villa.Path
+	webDir     villa.Path
+	srcDir     villa.Path
 	checkFile  villa.Path
 	exeFile    villa.Path
 	gepsvrFile villa.Path
+	tmpRoot    villa.Path
 }
 
-func newMonitor(web, root, codeRoot villa.Path) *monitor {
+func newMonitor(web, src, inc, tmp villa.Path) *monitor {
 	m := &monitor{
-		root: root,
+		webDir:     web,
+		srcDir:     src,
+		tmpRoot:    tmp,
+		gepsvrFile: inc.Join(fn_GEPSVR_GO),
+	}
 
-		webPath: web,
-
-		srcPath:    root.Join(fn_SOURCE_DIR),
-		gepsvrFile: codeRoot.Join(fn_GEPSVR_DIR, fn_GEPSVR_GO)}
-
-	m.srcPath.MkdirAll(0777)
+	m.srcDir.MkdirAll(0777)
 
 	return m
 }
@@ -51,12 +48,12 @@ func (m *monitor) updateCheckExeFiles(check, exe villa.Path) {
 
 func (m *monitor) scanFiles() (files map[villa.Path]os.FileInfo) {
 	files = make(map[villa.Path]os.FileInfo)
-	m.webPath.Walk(func(path villa.Path, info os.FileInfo, err error) error {
+	m.webDir.Walk(func(path villa.Path, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if !info.IsDir() && strings.ToLower(path.Ext()) == s_SUFFIX {
-			rel, err := m.webPath.Rel(path)
+			rel, err := m.webDir.Rel(path)
 			if err == nil {
 				files[rel] = info
 			}
@@ -143,7 +140,7 @@ type sourceGenerator struct {
 
 func (sg *sourceGenerator) Load(path villa.Path) (string, error) {
 	//log.Println("Reading", path)
-	src, err := sg.m.webPath.Join(path).ReadFile()
+	src, err := sg.m.webDir.Join(path).ReadFile()
 	if err != nil {
 		return "", err
 	} // if
@@ -221,7 +218,7 @@ func (m *monitor) parse(srcFiles map[string]villa.Path) error {
 				goSrc := genGoSource(parts, url, fmt.Sprint(cnt))
 				cnt++
 
-				srcFile := m.srcPath.Join(src + ".go")
+				srcFile := m.srcDir.Join(src + ".go")
 				//fmt.Println("Generating", srcFile, "...")
 				err = srcFile.WriteFile([]byte(goSrc), 0666)
 				if err != nil {
@@ -255,9 +252,9 @@ func safeLink(src, dst villa.Path) (err error) {
 
 func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
 	// Create temporary directory
-	tmpDir, err := villa.Path(gConf.String("web.tempdir", "")).TempDir("gep_")
+	tmpDir, err := villa.Path(m.tmpRoot).TempDir("gep_")
 	if err != nil {
-		log.Println(err)
+		log.Println("Creating tmpDir failed:", err)
 		return err
 	}
 
@@ -265,13 +262,13 @@ func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
 	gepsvrGo := tmpDir.Join(fn_GEPSVR_GO)
 	err = safeLink(m.gepsvrFile, gepsvrGo)
 	if err != nil {
-		log.Println(err)
+		log.Println("Linking", m.gepsvrFile, "to temp folder:", err)
 		return
 	}
 
 	// Link source go files
 	for src := range srcFiles {
-		safeLink(m.srcPath.Join(src+".go"), tmpDir.Join(src+".go"))
+		safeLink(m.srcDir.Join(src+".go"), tmpDir.Join(src+".go"))
 	}
 
 	exeFile := m.exeFile
@@ -279,7 +276,7 @@ func (m *monitor) compile(srcFiles map[string]villa.Path) (err error) {
 	// Open log file
 	cf, err := cmplFile.Create()
 	if err != nil {
-		log.Println(err)
+		log.Println("Create log file:", err)
 		return
 	}
 	defer cf.Close()

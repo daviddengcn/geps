@@ -25,6 +25,7 @@ var (
 
 func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 	cmd = exeFile.Command(host)
+	cmd.Dir = gPaths.webRoot.S()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Start()
@@ -68,12 +69,6 @@ func compilingLoop() {
 	gWaitBeforeDel = time.Duration(gConf.Int("back.delwait", 1)) * time.Second
 	gWaitBeforeStart = time.Duration(gConf.Int("back.startwait", 1)) * time.Second
 
-	codeRoot, _ := villa.Path(gConf.String("code.root", ".")).Abs()
-	log.Println("Code root:", codeRoot)
-
-	webRoot, _ := villa.Path(gConf.String("web.root", ".")).Abs()
-	log.Println("Monitoring", webRoot, "...")
-
 	backPorts := gConf.IntList("back.ports", []int{8081, 8082, 8083})
 	log.Println("Back ports:", backPorts)
 	rr_NUM := len(backPorts)
@@ -86,14 +81,17 @@ func compilingLoop() {
 
 	// Initialize entries
 	entries := make([]exeEntry, rr_NUM)
+	
+	gPaths.exe.MkdirAll(0777)
+	gPaths.tmp.MkdirAll(0777)
 
 	for i := range entries {
-		entries[i].exePath = webRoot.Join(fmt.Sprintf("gepsvr-%d.exe", (1 + i)))
+		entries[i].exePath = gPaths.exe.Join(fmt.Sprintf("gepsvr-%d.exe", (1 + i)))
 		entries[i].backHost = fmt.Sprintf("localhost:%d", backPorts[i])
 	}
 
 	current, last := 0, 0
-	m := newMonitor(webRoot.Join("web"), webRoot, codeRoot)
+	m := newMonitor(gPaths.webRoot, gPaths.src, gPaths.inc, gPaths.tmp)
 	var cmd *exec.Cmd = nil
 
 	m.updateCheckExeFiles(entries[last].exePath, entries[current].exePath)
@@ -131,7 +129,7 @@ func compilingLoop() {
 }
 
 func startCompilingLoop() {
-	backHost.Set("localhost:8081")
+	backHost.Set("")
 	go compilingLoop()
 }
 
@@ -169,7 +167,10 @@ var mediaSuffixes []string = []string{
 	".js",
 	".css"}
 
-var webRoot villa.Path = `./web`
+var gPaths struct {
+	webRoot            villa.Path
+	src, exe, tmp, inc villa.Path
+}
 
 func isMediaFile(lowerPath string) bool {
 	for _, suf := range mediaSuffixes {
@@ -193,7 +194,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isMediaFile(lowerPath) {
-		http.ServeFile(w, r, webRoot.Join(r.URL.Path).S())
+		http.ServeFile(w, r, gPaths.webRoot.Join(r.URL.Path).S())
 	}
 }
 
@@ -205,12 +206,28 @@ func init() {
 
 var gConf *ljconf.Conf
 
+
+const GEPS_PKG_PATH = "github.com/daviddengcn/geps"
+
+func goPath() villa.Path {
+	p := os.Getenv("GOPATH")
+	return villa.Path(p).Join("src", GEPS_PKG_PATH, "gepsvr")
+}
+
 func loadConf() {
 	var err error
 	gConf, err = ljconf.Load(confFile)
 	if err != nil {
 		log.Println("Load configure files:", err)
 	}
+
+	gPaths.webRoot = villa.Path(gConf.String("web.root", "web")).AbsPath()
+	gPaths.src = villa.Path(gConf.String("code.src", "src")).AbsPath()
+	gPaths.exe = villa.Path(gConf.String("code.exe", "exe")).AbsPath()
+	gPaths.tmp = villa.Path(gConf.String("code.tmp", "")).AbsPath()
+	gPaths.inc = villa.Path(gConf.String("code.inc", goPath().S())).AbsPath()
+
+	fmt.Printf("Path set: %+v\n", gPaths)
 }
 
 func main() {

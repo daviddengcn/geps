@@ -1,0 +1,34 @@
+{
+	listen: {
+		// Address and port of the http server
+		addr: ":8080"
+	}
+	
+	// Settings of back-server
+	back: {
+		// Round-robin ports
+		ports: [8081, 8082, 8083]
+		// Seconds before an outdated back-server is killed
+		killwait: 5
+		// Seconds before deleting a back-server executable after process is killed
+		delwait: 1
+		// Seconds before start sending requests to a back-server executable after starting the process
+		startwait: 1
+	}
+	
+	web: {
+		// Root of the web files
+		root: "web"
+	}
+	
+	code: {
+		// Folder for generated go-source files
+		src: "src"
+		// Folder for executable files of back-server
+		exe: "exe"
+		// Root of temporary folders
+		tmp: "tmp"
+		// Path to gepsvr folder which contains a go file to be included. Automatically set if not specified.
+//		inc: "gepsvr"
+	}
+}
