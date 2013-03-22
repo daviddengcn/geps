@@ -81,7 +81,7 @@ func compilingLoop() {
 
 	// Initialize entries
 	entries := make([]exeEntry, rr_NUM)
-	
+
 	gPaths.exe.MkdirAll(0777)
 	gPaths.tmp.MkdirAll(0777)
 
@@ -206,7 +206,6 @@ func init() {
 
 var gConf *ljconf.Conf
 
-
 const GEPS_PKG_PATH = "github.com/daviddengcn/geps"
 
 func goPath() villa.Path {
@@ -224,7 +223,10 @@ func loadConf() {
 	gPaths.webRoot = villa.Path(gConf.String("web.root", "web")).AbsPath()
 	gPaths.src = villa.Path(gConf.String("code.src", "src")).AbsPath()
 	gPaths.exe = villa.Path(gConf.String("code.exe", "exe")).AbsPath()
-	gPaths.tmp = villa.Path(gConf.String("code.tmp", "")).AbsPath()
+	gPaths.tmp = villa.Path(gConf.String("code.tmp", ""))
+	if gPaths.tmp != "" {
+		gPaths.tmp = gPaths.tmp.AbsPath()
+	}
 	gPaths.inc = villa.Path(gConf.String("code.inc", goPath().S())).AbsPath()
 
 	fmt.Printf("Path set: %+v\n", gPaths)
