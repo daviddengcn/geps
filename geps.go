@@ -18,9 +18,9 @@ import (
 var backHost villa.AtomicBox
 
 var (
-	gWaitBeforeKill  time.Duration = 10 * time.Second
-	gWaitBeforeDel   time.Duration = 1 * time.Second
-	gWaitBeforeStart time.Duration = 1 * time.Second
+	gWaitBeforeKill  time.Duration = 10
+	gWaitBeforeDel   time.Duration = 1
+	gWaitBeforeStart time.Duration = 1
 )
 
 func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
@@ -33,8 +33,8 @@ func startBackServer(exeFile villa.Path, host string) (cmd *exec.Cmd) {
 		return nil
 	}
 
-	log.Printf("Waiting for new back server %s starting...\n", host)
-	time.Sleep(gWaitBeforeStart)
+	log.Printf("Waiting %ds for new back server %s starting...\n", gWaitBeforeStart, host)
+	time.Sleep(gWaitBeforeStart * time.Second)
 
 	return cmd
 }
@@ -43,31 +43,32 @@ func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 	// release to lock to allow the entry reused.
 	defer lock.Unlock()
 
-	log.Println("Waiting for old host processing current requests", exeFile)
-	time.Sleep(gWaitBeforeKill)
+	log.Printf("Waiting %ds for old host processing current requests: %v", gWaitBeforeKill, exeFile)
+	time.Sleep(gWaitBeforeKill * time.Second)
 	err := cmd.Process.Kill()
 	if err != nil {
 		log.Println("Error killing old back server:", err, exeFile)
 	}
 
-	log.Println("Waiting for old host dying", exeFile)
+	log.Printf("Waiting for old host dying", exeFile)
 	stat, err := cmd.Process.Wait()
-	log.Println("Host killed:", stat, exeFile)
-
-	time.Sleep(gWaitBeforeDel)
+	
+	log.Printf("Host killed(delete after %ds): %v, %s", gWaitBeforeDel, stat, exeFile)
+	time.Sleep(gWaitBeforeDel * time.Second)
+	
 	log.Println("Deleting", exeFile)
 	err = exeFile.Remove()
 	if err != nil {
-		log.Println("Deleting", exeFile, "error:", err)
+		log.Println("Deleting", exeFile, "failed:", err)
 	} else {
 		log.Println(exeFile, "deleted!")
 	}
 }
 
 func compilingLoop() {
-	gWaitBeforeKill = time.Duration(gConf.Int("back.killwait", 10)) * time.Second
-	gWaitBeforeDel = time.Duration(gConf.Int("back.delwait", 1)) * time.Second
-	gWaitBeforeStart = time.Duration(gConf.Int("back.startwait", 1)) * time.Second
+	gWaitBeforeKill = time.Duration(gConf.Int("back.killwait", int(gWaitBeforeKill)))
+	gWaitBeforeDel = time.Duration(gConf.Int("back.delwait", int(gWaitBeforeDel)))
+	gWaitBeforeStart = time.Duration(gConf.Int("back.startwait", int(gWaitBeforeStart)))
 
 	backPorts := gConf.IntList("back.ports", []int{8081, 8082, 8083})
 	log.Println("Back ports:", backPorts)

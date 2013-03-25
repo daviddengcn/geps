@@ -1,9 +1,9 @@
 package utils
 
-import(
+import (
+	"bytes"
 	"io"
 	"strings"
-	"bytes"
 )
 
 var (
@@ -19,6 +19,7 @@ var (
 // HTMLEscape writes to w the escaped HTML equivalent of the plain text data b.
 func HTMLEscape(w io.Writer, b []byte) {
 	last := 0
+	lastb := byte(0)
 	for i, c := range b {
 		var html []byte
 		switch c {
@@ -33,15 +34,21 @@ func HTMLEscape(w io.Writer, b []byte) {
 		case '>':
 			html = htmlGt
 		case ' ':
+			if lastb > ' ' && lastb != '>' {
+				lastb = ' '
+				continue
+			}
 			html = htmlSpace
 		case '\n':
 			html = htmlNewLine
 		default:
+			lastb = c
 			continue
 		}
 		w.Write(b[last:i])
 		w.Write(html)
 		last = i + 1
+		lastb = html[len(html)-1]
 	}
 	w.Write(b[last:])
 }

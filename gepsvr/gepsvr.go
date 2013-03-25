@@ -2,19 +2,18 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"log"
-	"strings"
-	"net/http"
-	"html/template"
-	"github.com/daviddengcn/go-villa"
+	"github.com/daviddengcn/geps/utils"
 	"github.com/russross/blackfriday"
+	"html/template"
+	"log"
+	"net/http"
+	"os"
 )
 
-var webRoot villa.Path = `./web`
-
+// map from path to HandlerFunc
 var processors map[string]http.HandlerFunc = map[string]http.HandlerFunc{}
 
+// registerPath registers a path-HandlerFunc pair in processors
 func registerPath(path string, f http.HandlerFunc) {
 	log.Println("Register path:", path)
 	processors[path] = f
@@ -39,19 +38,17 @@ func main() {
 	http.ListenAndServe(host, nil)
 }
 
-
 // for gep files
 func __print__(response http.ResponseWriter, s interface{}) {
-    response.Write([]byte(fmt.Sprint(s)))
+	response.Write([]byte(fmt.Sprint(s)))
 }
 
 /* <html>$text</html> */
 func Html(text interface{}) string {
-	return strings.Replace(template.HTMLEscapeString(fmt.Sprint(text)), "\n", "<br>", -1)
+	return utils.HTMLEscapeString(fmt.Sprint(text))
 }
 
-
-/* <input attr='$text'> */
+/* <input attr='$text'> <pre>$text</pre> <textarea>$text</textarea>*/
 func Value(text interface{}) string {
 	return template.HTMLEscapeString(fmt.Sprint(text))
 }
