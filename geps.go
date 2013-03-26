@@ -50,12 +50,12 @@ func killBackServer(cmd *exec.Cmd, exeFile villa.Path, lock *sync.Mutex) {
 		log.Println("Error killing old back server:", err, exeFile)
 	}
 
-	log.Printf("Waiting for old host dying", exeFile)
+	log.Println("Waiting for old host dying:", exeFile)
 	stat, err := cmd.Process.Wait()
-	
+
 	log.Printf("Host killed(delete after %ds): %v, %s", gWaitBeforeDel, stat, exeFile)
 	time.Sleep(gWaitBeforeDel * time.Second)
-	
+
 	log.Println("Deleting", exeFile)
 	err = exeFile.Remove()
 	if err != nil {

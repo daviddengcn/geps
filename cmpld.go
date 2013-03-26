@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/daviddengcn/gdr/gdrf"
 	"github.com/daviddengcn/geps/gep"
 	"github.com/daviddengcn/go-villa"
 	"log"
@@ -170,8 +171,6 @@ import(
 #_imports_#)
 
 func init() {
-	fmt.Print()
-	strings.TrimSpace("")
 	registerPath(#_url_path_#, __process_#_func_name_#)
 }
 
@@ -209,23 +208,30 @@ func (m *monitor) parse(srcFiles map[string]villa.Path) error {
 		gepSrc, err := sg.Load(path)
 		if err == nil {
 			parts, err := gep.Parse(&sg, gepSrc)
-			if err == nil {
-				if parts.IncludeOnly {
-					delete(srcFiles, src)
-					log.Println(path, "IncludeOnly, ignored!")
-					continue
-				}
-				goSrc := genGoSource(parts, url, fmt.Sprint(cnt))
-				cnt++
+			if err != nil {
+				return err
+			}
 
-				srcFile := m.srcDir.Join(src + ".go")
-				//fmt.Println("Generating", srcFile, "...")
-				err = srcFile.WriteFile([]byte(goSrc), 0666)
-				if err != nil {
-					sg.Error(fmt.Sprint(err))
-				}
-			} else {
-				sg.Error(fmt.Sprint(err))
+			if parts.IncludeOnly {
+				delete(srcFiles, src)
+				log.Println(path, "IncludeOnly, ignored!")
+				continue
+			}
+			goSrc := genGoSource(parts, url, fmt.Sprint(cnt))
+			cnt++
+
+			srcFile := m.srcDir.Join(src + ".go")
+			//fmt.Println("Generating", srcFile, "...")
+			///err = srcFile.WriteFile([]byte(goSrc), 0666)
+			srcF, err := srcFile.Create()
+			if err != nil {
+				return err
+			}
+			err = gdrf.FilterFile(villa.Path(src+".go"), goSrc, srcF)
+			srcF.Close()
+
+			if err != nil {
+				return err
 			}
 		}
 	}
@@ -307,10 +313,12 @@ func (m *monitor) run() (changed bool) {
 	log.Println("Compiling:", srcFiles)
 	err := m.parse(srcFiles)
 	if err != nil {
+		log.Println("Parsing source files:", err)
 		return false
 	}
 	err = m.compile(srcFiles)
 	if err != nil {
+		log.Println("Compiling:", err)
 		return false
 	}
 	return true

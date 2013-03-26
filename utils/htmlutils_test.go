@@ -5,7 +5,7 @@ import (
 )
 
 func TestHTMLEscapeString(t *testing.T) {
-	cases := []struct{in, out string}{
+	cases := []struct{ in, out string }{
 		{" ", "&nbsp;"},
 		{"  ", "&nbsp; "},
 		{"   ", "&nbsp; &nbsp;"},
