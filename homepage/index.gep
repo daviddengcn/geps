@@ -1,0 +1,81 @@
+<%!include "header.gep" %>
+<% show_header("") %>
+<h1>Go Embedded Page(GEP)</h1>
+<section>
+<%= Markdown(`
+## Introduction
+Go Embedded Page(GEP) is a web framework using [Go](http://golang.org/). It is similar to JSP. The whole page is an orinary HTML file with some tag inserted.
+A compiling daemon monitors the _GEP files_, and converts them into _Go source_, and compiles the source into an _executable file_.
+Http server then run them as _CGI_'s.
+    
+You need not learn a template language to write web application with Go backend fast. Knowing Go, Markdown and HTML is enough.
+
+Source code: http://github.com/daviddengcn/geps
+
+## Installation
+### Installaion of Go
+Make sure you have correctly [installed Go environment](http://golang.org/doc/install). Make sure _$GOPATH/bin_ is included in the system _$PATH_.
+
+### Installation of GEPS Package
+    $ go get -u github.com/daviddengcn/geps
+    $ go install github.com/daviddengcn/geps
+
+### Run Compiling Daemon
+    $ mkdir web
+    $ copy $GOPATH/github.com/daviddengcn/geps/geps.conf.template geps.conf
+    $ vim geps.conf
+    $ geps &
+
+Put site documents (*.gep and other media files) into _web_ folder. _geps.conf_ can be modified as the comments says.
+    
+
+## Supported Tags
+### <% ... %&gt;
+Pure _Go code_.
+
+### <%= ... %&gt;
+Evaluation of _Go expression_ as HTML. Some functions are predefined: Markdown(), Html(), Value(), Query(), JS() for converting text to HTML.
+
+### <%! ... %&gt;
+Extra commands:
+
+Command       | Description                                                                                                     | Example
+--------------|-----------------------------------------------------------------------------------------------------------------|---------
+_import_      | go import statement for importing go packages. Duplicated imports will be merged.                               |_import "strconv"_
+_include_     | Include other GEP files. Can include the same file more than once. Recursively including self will be ignored.  |_include "header.gep"_
+_require_     | Make sure another GEP file is included and only once. Duplicated or recursive requiring will be ignored. This is mainly used for including functional modules. |_require "utils.gep"_
+_includeonly_ | If exists in any position of a GEP file, the GEP file itself will not be registered as an HTTP path.            | ____________________
+
+### <%# ... %&gt;
+Comments. No code will be generated. This is useful for debugging.
+
+## Predefined
+### Variables
+Variable     | Type | Description
+-------------|------|--------------------------------------------------------------
+_request_ | *http.Request | The HTTP request object
+_response_ | http.ResponseWriter | Response writer. Commonly this object is automatically used.
+
+### Functions
+Function     | Description
+-------------|--------------------------------------------------------------------
+_Markdown()_ | Converting markdown text to HTML. Currently using [blackfriday](http://github.com/russross/blackfriday) package, the _common_ mode.
+_Html()_     | Converting text to HTML.
+_Value()_    | Escaping value of an atributes or body of a textarea tag.
+_Query()_    | Escaping the query value in a URL.
+_JS()_       | Escaping a javascript string.
+
+### Packages
+Some Go build-in packages are pre-imported: _fmt_, _strings_, _net/http_. (You can still manually import them without causing errors)
+
+## Examples
+[Hello world!](src_helloworld.gep)([visit](helloworld.gep))
+
+Source files of this site are good examples: [index.gep](src_index.gep) [header.gep](src_header.gep) [footer.gep](src_footer.gep)
+
+## LICENSE
+[BSD license](http://opensource.org/licenses/BSD-2-Clause)
+`)%>
+</section>
+
+<%!include "footer.gep" %>

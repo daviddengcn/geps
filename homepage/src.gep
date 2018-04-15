@@ -1,0 +1,43 @@
+<%!includeonly%>
+<%!import "github.com/daviddengcn/go-villa"%>
+<%
+    show_source := func(srcFn string, height int) {
+        src, err := villa.Path(srcFn).ReadFile();
+        source := string(src)
+        if err != nil {
+            source = fmt.Sprint(err)
+        }
+%>
+<%!include "header.gep" %>
+<% show_header("Source code of " + srcFn + " - GEP") %>
+<script src="/js/cm/codemirror.js"></script>
+<script src="/js/cm/htmlmixed.js"></script>
+<script src="/js/cm/htmlembedded.js"></script>
+<script src="/js/cm/xml.js"></script>
+<script src="/js/cm/go.js"></script>
+<script src="/js/cm/markdown.js"></script>
+
+<style>
+    .CodeMirror {
+        height: <%= height %>px;
+    }
+</style>
+
+<h1>Source code of <%= Html(srcFn) %></h1>
+<section>
+    <textarea id='source'>
+<%= Value(source) %></textarea>
+</section>
+<script>
+    myCodeMirror = CodeMirror.fromTextArea(document.getElementById('source'),{
+        lineNumbers: true,
+        mode: "markdown",
+        lineWrapping: true,
+        readOnly: true
+    });
+</script>
+<%!include "footer.gep" %>
+<%
+    } // func =: show_source
+    _ = show_source
+%>

@@ -1,0 +1,25 @@
+<%!includeonly %>
+<%
+    show_header := func(title string) {
+        if title == "" {
+            title = "Go Embedded Page(GEP)"
+        }
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" type="text/css" href="/css/geps.css">
+    <link rel="stylesheet" href="/css/codemirror.css">
+    <title><%= Html(title) %></title>
+</head>
+
+<body>
+<header>
+    <a href="/">Home</a>
+</header>
+
+<%
+}
+_ = show_header
+%>

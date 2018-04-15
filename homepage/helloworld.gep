@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>Hello-world of Go Embeded Page</title>
+</head>
+<body style="font-family: courier new">
+<%= Html(
+`| |     | |         || |  .-+-.  |
+| |     | |        -++-+- +-+-+  |
+| |  ^  | |  ^      || |  '-+-'  |
++-+ | | | | | |     || |   ,^.   |
+| | +-' | | | |     || |  /| |\  |
+| | | , | | | |  ?  |'-' / ; | \  
+| |  V  | |  V  /   '---- /  |   O`)%>
+</body>
+<html>

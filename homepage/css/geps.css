@@ -1,0 +1,90 @@
+body {
+    font-family: Courier New;
+    text-align: center;
+    margin: 0px;
+    padding: 0px;
+    background: #eee;
+}
+
+a {
+    text-decoration: none;
+    border-bottom: 1px dashed #077;
+}
+
+header {
+    text-align: left;
+}
+
+header, footer {
+    color: white;
+    margin: 0px;
+    background: black;
+}
+footer {
+    padding: 20px 0px 50px 0px;
+    text-align: center;
+}
+
+header em, footer em {
+    color: #f77
+}
+
+header a, footer a {
+    color: #f77
+}
+section {
+    margin: 0px auto;
+    padding: 0px 20px 20px 20px;
+    text-align: justify;
+    width: 1024px;
+    background: white;
+}
+
+section thead td {
+    font-weight: bold;
+}
+
+section tbody td {
+    padding: 0px 10px 0px 0px;
+    vertical-align: top;
+}
+
+article {
+    line-height: 20px;
+    padding: 0px 10px 10px 10px;
+}
+
+code {
+    background: black;
+    color: white;
+    padding: 5px;
+    display: block;
+}
+
+h1 {
+    text-align: center;
+    color: white;
+    background: black;
+    padding: 60px 0px 40px 0px;
+    margin: 0px -20px;
+}
+
+h2 {
+    line-height: 20px;
+    padding: 40px 20px 20px;
+    margin: 0px -20px;
+    color: white;
+    background: black;
+}
+
+h3 {
+    line-height: 15px;
+    margin: 0px -20px;
+    padding: 30px 20px 5px 20px;
+    border-bottom: 5px solid black;
+}
+
+em, .value {
+    font-style: normal;
+    color: #077
+}
